@@ -17,7 +17,7 @@ GIT_HOSTNAME = 'github.com'
 
 class GitHubClient:
     def __init__(self, hostname, token):
-        self.github = Github(base_url=f"https://{hostname}/api/v3", login_or_token=token)
+        self.github = Github(base_url=f"https://api.{hostname}", login_or_token=token)
         self.user = self.github.get_user()
         self.username = self.user.login # this will throw exception if token is invalid
     
@@ -71,7 +71,7 @@ class GitHubRepoSubmoduleManager:
         self.owner = owner # If repo is in organization then org is owner
         self.repo_top = repo_top # Repository for which the submodules are being managed
         self.token = token
-        self.hostname = f'{GIT_HOSTNAME}/api/v3'
+        self.hostname = f'api.{GIT_HOSTNAME}'
         self.headers = {
             'Authorization': f'token {self.token}',
             'Accept': 'application/vnd.github.v3+json',
