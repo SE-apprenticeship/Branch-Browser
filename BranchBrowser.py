@@ -6,6 +6,7 @@ import re
 import sys
 import threading
 import tkinter as tk
+from tkinter import font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, UnknownObjectException
@@ -277,6 +278,70 @@ class GitHubRepoSubmoduleManager:
         print(f'Updated {response["ref"]} to {response["object"]["sha"]}')
 
 
+class TreeviewTooltip:
+    def __init__(self, github_client, org_combo, repo_combo, treeview, tooltip_func):
+        self.github_client = github_client
+        self.org_combo = org_combo
+        self.repo_combo = repo_combo
+        self.treeview = treeview
+        self.tooltip_func = tooltip_func
+        self.tip_window = None
+        self.treeview.bind("<Motion>", self.on_motion)
+        self.treeview.bind("<Leave>", self.on_leave)
+
+    def on_motion(self, event):
+        item = self.treeview.identify_row(event.y)
+        if not item:
+            self.hide_tooltip()
+            return
+
+        if self.treeview.tag_has('has_tooltip', item):
+            if not self.tip_window:
+                self.show_tooltip(item, event.x, event.y)
+        else:
+            self.hide_tooltip()
+
+    def show_tooltip(self, item, x, y):
+        text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
+        if text:
+            self.tip_window = tw = tk.Toplevel(self.treeview)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x+20+self.treeview.winfo_rootx()}+{y+10+self.treeview.winfo_rooty()}")
+            label = tk.Label(tw, text=text, justify=tk.LEFT, background="#ffffe0", relief=tk.SOLID, borderwidth=1, font=font.Font(family="Consolas", size=8))
+            label.pack(ipadx=1)
+
+    def hide_tooltip(self):
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
+
+    def on_leave(self, event):
+        self.hide_tooltip()
+
+
+def get_path(tree, item):
+    path = []
+    while item:
+        path.append(tree.item(item, 'text'))
+        item = tree.parent(item)
+    return '/'.join(reversed(path))
+
+
+def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
+    # This function should return the tooltip text for the given item
+    org_name = org_combo.get()
+    repo_name = repo_combo.get()
+    branch_name = get_path(treeview, item)
+
+    # get submodules info
+    submodules_info = get_submodules_info(github_client, org_name, repo_name, branch_name)
+    # extend with sub sub module info
+    submodules_info =[sub_m_info + (get_submodules_info(github_client, org_name, sub_m_info[1], sub_m_info[2]),) for sub_m_info in submodules_info]
+
+    submodules_hierarchy_string = f"R:{repo_name} B:{branch_name}\n" + build_hierarchy(submodules_info, format_output, get_sublist)
+    return submodules_hierarchy_string
+
+
 class App:
     def __init__(self, root, github_client):
         self.root = root
@@ -293,6 +358,7 @@ class App:
         self.branches_tree = ttk.Treeview(self.frame, selectmode="none")
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
+
 
         self.menu = tk.Menu(self.root, tearoff=0)
 
@@ -312,6 +378,9 @@ class App:
         self.repo_combo = ttk.Combobox(self.root)
         self.repo_combo['state'] = 'readonly'
         self.repo_combo.pack(side='top', fill='x')
+
+        # Initialize the tooltip functionality for the treeview
+        TreeviewTooltip(self.github_client, self.org_combo, self.repo_combo, self.branches_tree, tooltip_text)
 
         self.log_label = tk.Label(self.root, text="Log:")
         self.log_label.pack(side='top', fill='x')
@@ -346,11 +415,14 @@ class App:
     def populate_tree(self, tree, node, parent=''):
         if type(node) == dict:
             for k,v in node.items():
-                new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
+                if len(v) != 0: # Non leaf node
+                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
+                else:
+                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
                 self.populate_tree(tree, v, new_node)
         elif type(node) == list:
             for v in node:
-                tree.insert(parent, 'end', text=v, tags=("branch_tree",))
+                tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
 
     def update_repos(self, event):
         org_name = self.org_combo.get()
@@ -384,6 +456,8 @@ class App:
             repo_name = self.repo_combo.get()
             if org_name.endswith(repo_name):
                 self.menu.add_command(label="Create Feature Branch", command=self.create_feature_branch)
+            if org_name.endswith(repo_name):
+                self.menu.add_command(label="Create Release Branch", command=self.create_release_branch)
         else:
             self.menu.add_command(label="Expand all", command=self.expand_all)
             self.menu.add_command(label="Colapse all", command=self.collapse_all)
@@ -391,18 +465,11 @@ class App:
         self.last_tree_item_rightclicked = item
         self.menu.post(event.x_root, event.y_root)
 
-    def get_path(self, tree, item):
-        path = []
-        while item:
-            path.append(tree.item(item, 'text'))
-            item = tree.parent(item)
-        return '/'.join(reversed(path))
-
     def create_branch(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
-        branch_name = self.get_path(self.branches_tree, selected_item)
+        branch_name = get_path(self.branches_tree, selected_item)
         print(f"Creating branch from {branch_name} on {org_name}/{repo_name}...")
         new_branch = CloneDialog(self.root, self.github_client, org_name, repo_name, branch_name).result
         # Check the result
@@ -416,7 +483,7 @@ class App:
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
-        branch_name = self.get_path(self.branches_tree, selected_item)
+        branch_name = get_path(self.branches_tree, selected_item)
         print(f"Deleting branch from {branch_name} on {org_name}/{repo_name}...")
         result = DeleteDialog(self.root, self.github_client, org_name, repo_name, branch_name).result
         # Check the result
@@ -430,7 +497,7 @@ class App:
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
-        branch_name = self.get_path(self.branches_tree, selected_item)
+        branch_name = get_path(self.branches_tree, selected_item)
         print(f"Manage submodules for {branch_name} on {org_name}/{repo_name}...")
         SubmoduleSelectorDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
 
@@ -439,9 +506,17 @@ class App:
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
-        branch_name = self.get_path(self.branches_tree, selected_item)
+        branch_name = get_path(self.branches_tree, selected_item)
         print(f"Create feature branch for {branch_name} on {org_name}/{repo_name}...")
         CreateFeatureBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
+
+    def create_release_branch(self):
+        org_name = self.org_combo.get()
+        repo_name = self.repo_combo.get()
+        selected_item = self.last_tree_item_rightclicked
+        branch_name = get_path(self.branches_tree, selected_item)
+        print(f"Create release branch for {branch_name} on {org_name}/{repo_name}...")
+        CreateReleaseBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
     
 
 class TokenDialog(simpledialog.Dialog):
@@ -639,8 +714,8 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
             if repo_submodule_manager.add_or_update_submodule(self.branch_name, orig_submodule.repo, orig_submodule.path):
                 updated.append(orig_submodule.repo)
 
-        print(f"Updated {updated} submodules to HEAD revision.")
-
+        print(f"Updated {updated} submodules to HEAD revision on {self.org_name}/{self.repo_name}/{self.branch_name}.")
+        super().cancel()
 
     def body(self, master):
         # Disable resizing of the dialog
@@ -648,13 +723,13 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         self.title(f'Manage submodules for {self.org_name}/{self.repo_name}/{self.branch_name}')
 
         # Create right container frame
-        self.left_frame = tk.Frame(master, width=90, height=50)
+        self.left_frame = tk.Frame(master, width=90, height=40)
         self.left_label = tk.Label(self.left_frame, text="Submodules:")
         # Create listboxes
-        self.submodules_left_listbox = tk.Listbox(self.left_frame, width=90, height=50)
+        self.submodules_left_listbox = tk.Listbox(self.left_frame, width=90, height=40)
 
         # Create right container frame
-        self.right_frame = tk.Frame(master, width=90, height=50)
+        self.right_frame = tk.Frame(master, width=90, height=40)
 
         org_repos_names = self.github_client.get_organization_repos_names(self.org_name)
         org_repos_names.remove(self.repo_name)
@@ -667,7 +742,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         self.repos_combobox.current(0)
 
         # Create right listbox
-        self.repo_branches_right_listbox = tk.Listbox(self.right_frame, width=90, height=50)
+        self.repo_branches_right_listbox = tk.Listbox(self.right_frame, width=90, height=40)
 
         # Create buttons
         button_right = tk.Button(master, text=">", command=self.move_to_right)
@@ -768,21 +843,14 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.replace_feature_branch_prefix.insert(0, "Features/TeamName/Feature-Bug")
         self.replace_feature_branch_prefix.grid(row=1, column=1)
 
-        # get submodules info
+        # get submodules info - only 1st level
         self.submodules_info = get_submodules_info(self.github_client, self.org_name, self.repo_name, self.branch_name)
-        # extend with sub sub module info
-        self.submodules_info =[sub_m_info + (get_submodules_info(self.github_client, self.org_name, sub_m_info[1], sub_m_info[2]),) for sub_m_info in self.submodules_info]
 
         tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=2, sticky='w')
 
-        tk.Label(master, text=f"R:{self.repo_name} B:{self.branch_name}").grid(row=3, sticky='w')
-        row_ind = 4
-        for sub_m_info in self.submodules_info:
-            tk.Label(master, text=f"\tR:{sub_m_info[1]} B:{sub_m_info[2]}").grid(row=row_ind, sticky='w')
-            for sub_sub_m_info in sub_m_info[4]:
-                row_ind += 1
-                tk.Label(master, text=f"\t\tR:{sub_sub_m_info[1]} B:{sub_sub_m_info[2]}").grid(row=row_ind, sticky='w')
-            row_ind += 1
+        submodules_hierarchy_string = f"R:{self.repo_name} B:{self.branch_name}\n" + build_hierarchy(self.submodules_info, format_output, get_sublist)
+
+        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=3, sticky='w')
 
     def cancel(self, event=None):
         print(f"Create feature branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
@@ -828,13 +896,110 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
                 self.github_client.organization_repo_create_branch(self.org_name, sub_m_repo_name, new_sub_m_branch_name, branch_commit_sha)
                 print(f"Created new branch {new_sub_m_branch_name} on sub repo {sub_m_repo_name}.")
 
+                # Now on new feature branch on top level connect all submodules with its new feature branches
+                repo_submodule_manager = GitHubRepoSubmoduleManager(self.org_name, self.repo_name, token)
+                # delete old submodule 
+                repo_submodule_manager.delete_submodule(new_branch_name, sub_m_info[0], sub_m_info[3])
+                # add new submodule
+                repo_submodule_manager.add_or_update_submodule(new_branch_name, sub_m_info[0], sub_m_info[3], new_sub_m_branch_name)
+
+            print(f"Feature branch structure created for {self.branch_name} on {self.org_name}/{self.repo_name}.")
+            self.update_tree(None) # Update tree to reflect changes
+
+        except Exception as e:
+            print(e)
+        finally:
+            # Close the processing popup
+            self.processing_popup.destroy()    
+
+class CreateReleaseBranchDialog(simpledialog.Dialog):
+    def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree):
+
+        self.github_client = github_client
+        self.org_name = org_name
+        self.repo_name = repo_name
+        self.branch_name = branch_name
+        self.update_tree = update_tree
+
+        # Call the superclass's __init__ method
+        super().__init__(parent)
+
+    def body(self, master):
+        # Disable resizing of the dialog
+        self.resizable(False, False)
+        self.title(f'Create release branch for {self.org_name}/{self.repo_name}/{self.branch_name}')
+
+        tk.Label(master, text="Enter search pattern (pattern that will be replaced by replacement pattern in every branch name):").grid(row=0, sticky='w')
+        self.search_branch_pattern = tk.Entry(master, width=60)
+        self.search_branch_pattern.insert(0, self.branch_name)
+        self.search_branch_pattern.grid(row=0, column=1)
+
+        tk.Label(master, text="Enter replacement pattern (pattern that will replace search pattern in every branch name):").grid(row=1, sticky='w')
+        self.replace_branch_pattern = tk.Entry(master, width=60)
+        self.replace_branch_pattern.insert(0, self.branch_name)
+        self.replace_branch_pattern.grid(row=1, column=1)
+
+        # get submodules info
+        self.submodules_info = get_submodules_info(self.github_client, self.org_name, self.repo_name, self.branch_name)
+        # extend with sub sub module info
+        self.submodules_info =[sub_m_info + (get_submodules_info(self.github_client, self.org_name, sub_m_info[1], sub_m_info[2]),) for sub_m_info in self.submodules_info]
+
+        tk.Label(master, text="List of branches from which new branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=2, sticky='w')
+
+        submodules_hierarchy_string = f"R:{self.repo_name} B:{self.branch_name}\n" + build_hierarchy(self.submodules_info, format_output, get_sublist)
+
+        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=3, sticky='w')
+
+    def cancel(self, event=None):
+        print(f"Create release branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
+        super().cancel()  # Ensure the base class cancel method is called
+
+    def apply(self, event=None):
+        # Show a processing popup
+        self.processing_popup = tk.Toplevel(self.master)
+        self.processing_popup.geometry("200x50")
+        tk.Label(self.processing_popup, text="Processing... Please wait").pack()
+        self.processing_popup.protocol("WM_DELETE_WINDOW", lambda: None) # Disable the close button
+        self.processing_popup.grab_set()  # Make the popup modal
+
+        self.search_branch_pattern_val = self.search_branch_pattern.get()
+        self.replace_branch_pattern_val = self.replace_branch_pattern.get()
+
+        threading.Thread(target=self.process).start()
+
+    def process(self):
+        try:
+            # Perform your action here
+            print("Creating release branch structure...")
+
+            # Creeate release branch for submodule
+            new_branch_name = self.branch_name.replace(self.search_branch_pattern_val, self.replace_branch_pattern_val)
+
+            # Validate if pattern replace will actually change branch name
+            if new_branch_name == self.branch_name:
+                print(f'Replace search branch pattern:{self.search_branch_pattern_val} has no effect on branch: {self.branch_name}. Nothing is being replaced.')
+                return
+
+            branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, self.repo_name, self.branch_name)
+            self.github_client.organization_repo_create_branch(self.org_name, self.repo_name, new_branch_name, branch_commit_sha)
+            print(f"Created new branch {new_branch_name} on top repo {self.repo_name}.")
+
+            for sub_m_info in self.submodules_info:
+                sub_m_repo_name = sub_m_info[1]
+                sub_m_branch_name = sub_m_info[2]
+
+                # Creeate release branch for submodule
+                new_sub_m_branch_name = sub_m_branch_name.replace(self.search_branch_pattern_val, self.replace_branch_pattern_val)
+                branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, sub_m_repo_name, sub_m_branch_name)
+                self.github_client.organization_repo_create_branch(self.org_name, sub_m_repo_name, new_sub_m_branch_name, branch_commit_sha)
+                print(f"Created new branch {new_sub_m_branch_name} on sub repo {sub_m_repo_name}.")
 
                 for sub_sub_m_info in sub_m_info[4]:
                     sub_sub_m_repo_name = sub_sub_m_info[1]
                     sub_sub_m_branch_name = sub_sub_m_info[2]
 
-                    # Creeate feature branch for sub submodule
-                    new_sub_sub_m_branch_name = sub_sub_m_branch_name.replace(self.search_branch_prefix_val, self.replace_feature_branch_prefix_val)
+                    # Creeate release branch for sub submodule
+                    new_sub_sub_m_branch_name = sub_sub_m_branch_name.replace(self.search_branch_pattern_val, self.replace_branch_pattern_val)
                     branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, sub_sub_m_repo_name, sub_sub_m_branch_name)
                     self.github_client.organization_repo_create_branch(self.org_name, sub_sub_m_repo_name, new_sub_sub_m_branch_name, branch_commit_sha)
                     print(f"Created new branch {new_sub_sub_m_branch_name} on sub sub repo {sub_sub_m_repo_name}.")
@@ -853,14 +1018,14 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
                 # add new submodule
                 repo_submodule_manager.add_or_update_submodule(new_branch_name, sub_m_info[0], sub_m_info[3], new_sub_m_branch_name)
 
-            print(f"Feature branch created for {self.branch_name} on {self.org_name}/{self.repo_name}.")
+            print(f"Release branch structure created for {self.branch_name} on {self.org_name}/{self.repo_name}.")
             self.update_tree(None) # Update tree to reflect changes
 
         except Exception as e:
             print(e)
         finally:
             # Close the processing popup
-            self.processing_popup.destroy()          
+            self.processing_popup.destroy()         
 
 
 def get_submodules_info(github_client, org_name, repo_name, branch_name):
@@ -896,13 +1061,42 @@ def get_submodules_info(github_client, org_name, repo_name, branch_name):
     return submodules_info
 
 
-# Calculate submodule path (folder) - default is same as submodule repo name, ADMS have exception for non Product
+# Calculate submodule path (folder) - default is same as submodule repo name
 def calculate_submodule_path(org_name, sub_repo_name):
     calculated_path = sub_repo_name
 
-    # Add some custom logic if submodule does not go into folder named as itself
-    
     return calculated_path
+
+
+def build_hierarchy(strings, format_output, get_sublist, prefix=''):
+    hierarchy = ''  # Initialize an empty string to build the hierarchy
+    total_items = len(strings)
+    
+    for index, item in enumerate(strings, start=1):
+        is_last = index == total_items  # Check if this is the last item
+        
+        # Use the format_output function to format the current item string
+        formatted_item = format_output(item)
+        if is_last:
+            hierarchy += f"{prefix}╚═══{formatted_item}\n"
+        else:
+            hierarchy += f"{prefix}╠═══{formatted_item}\n"
+        
+        # Use the get_sublist function to get the sublist from the current item
+        sublist = get_sublist(item)
+        if sublist is not None:
+            new_prefix = prefix + ("    " if is_last else "║   ")
+            hierarchy += build_hierarchy(sublist, format_output, get_sublist, new_prefix)
+    
+    return hierarchy
+
+
+def format_output(item):
+    return f"R:{item[1]} B:{item[2]}" # 1 = repository name, 2 = branch name 
+
+
+def get_sublist(item):
+    return item[4] if len(item) > 4 and isinstance(item[4], list) else None  # 4 = sublist if exist
 
 
 class TextHandler(object):
