@@ -130,24 +130,34 @@ class GitHubRepoSubmoduleManager:
             # No gitmodules file, nothing to delete
             return
 
+        # Filter out the deleted submodule entry
+        new_tree_entries = [
+            entry for entry in parent_tree_list
+            if entry['path'] != path_to_submodule
+        ]
+
+        # Check if .gitmodules entry exists and update it, otherwise add it
+        gitmodules_updated = False
+        for entry in new_tree_entries:
+            if entry['path'] == '.gitmodules':
+                entry['sha'] = git_modules_blob_sha
+                gitmodules_updated = True
+                break
+
+        if not gitmodules_updated:
+            new_tree_entries.append({
+                "path": ".gitmodules",
+                "mode": "100644",
+                "type": "blob",
+                "sha": git_modules_blob_sha,
+            })
+
         # Create a git tree that updates/deletes the gitmodule file and deletes submodule reference in tree
         data = {
             'base_tree': parent_tree_sha,
-            'tree': [
-                {
-                    "path": ".gitmodules",
-                    "mode": "100644",
-                    "type": "blob",
-                    "sha": git_modules_blob_sha,
-                },
-                {
-                    'path': path_to_submodule,
-                    'mode': '160000',
-                    'type': 'commit',
-                    'sha': None
-                }
-            ]
+            'tree': new_tree_entries
         }
+
         parent_tree_sha_new = self.make_request('POST', f'https://{self.hostname}/repos/{self.owner}/{self.repo_top}/git/trees', data)['sha']
 
         commit_message = f'Deleted {repo_sub} submodule'
