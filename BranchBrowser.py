@@ -6,7 +6,7 @@ import re
 import sys
 import threading
 import tkinter as tk
-from tkinter import font
+from tkinter import RIGHT, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, UnknownObjectException
@@ -365,10 +365,14 @@ class App:
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
 
-        self.branches_tree = ttk.Treeview(self.frame, selectmode="none")
+        self.tree_scrollbar = Scrollbar(self.frame)
+        self.tree_scrollbar.pack(side=RIGHT, fill=Y)
+        
+        self.branches_tree = ttk.Treeview(self.frame, selectmode="none",yscrollcommand=self.tree_scrollbar.set)
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
 
+        self.tree_scrollbar.config(command=self.branches_tree.yview)
 
         self.menu = tk.Menu(self.root, tearoff=0)
 
