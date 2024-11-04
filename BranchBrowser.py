@@ -375,10 +375,9 @@ class App:
         self.username = self.github_client.get_username()
         self.username_label = tk.Label(self.root, text=f"Logged in as: {self.username}")
         self.username_label.pack(side='top', fill='x')
-
         #Refresh button
         self.refresh = tk.Button(self.root,text="Refresh", command= self.refresh_branches())
-        self.refresh.pack(padx=20, pady=20, side='left')
+        self.refresh.pack(padx=20, pady=20)
 
         self.orgs = self.github_client.get_organizations_names()
         self.org_label = tk.Label(self.root, text="Organization:")
