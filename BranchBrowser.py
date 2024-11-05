@@ -6,7 +6,7 @@ import re
 import sys
 import threading
 import tkinter as tk
-from tkinter import RIGHT, Y, Scrollbar, font
+from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, UnknownObjectException
@@ -365,15 +365,19 @@ class App:
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
 
-        self.tree_scrollbar = Scrollbar(self.frame)
-        self.tree_scrollbar.pack(side=RIGHT, fill=Y)
+        self.vertical_scrollbar = Scrollbar(self.frame)
+        self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
         
-        self.branches_tree = ttk.Treeview(self.frame, selectmode="none",yscrollcommand=self.tree_scrollbar.set)
+        self.horizontal_scrollbar = Scrollbar(self.frame, orient="horizontal")
+        self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
+        
+        self.branches_tree = ttk.Treeview(self.frame, selectmode="none",yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
 
-        self.tree_scrollbar.config(command=self.branches_tree.yview)
-
+        self.vertical_scrollbar.config(command=self.branches_tree.yview)
+        self.horizontal_scrollbar.config(command=self.branches_tree.xview)
+        
         self.menu = tk.Menu(self.root, tearoff=0)
 
         self.username = self.github_client.get_username()
