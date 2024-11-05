@@ -2,6 +2,7 @@ import base64
 import datetime
 from io import StringIO
 import json
+import os
 import re
 import sys
 import threading
@@ -353,13 +354,17 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 
 class App:
-    def __init__(self, root, github_client):
+    def __init__(self, root, github_client, org, repo):
         self.root = root
         self.github_client = github_client
+        self.default_org = org
+        self.default_repo = repo
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
+        self.refresh_branches()
         print(f'Connected to GitHub with user: {self.username}.')
+        print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
     def setup_ui(self):
         self.frame = tk.Frame(self.root, width=400)
@@ -399,7 +404,6 @@ class App:
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(text)
 
-
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
         for child in self.branches_tree.get_children(item):
@@ -417,20 +421,26 @@ class App:
         self.branches_tree.bind('<Button-3>', self.on_right_click)
         self.org_combo.bind('<<ComboboxSelected>>', self.update_repos)
         self.repo_combo.bind('<<ComboboxSelected>>', self.update_tree)
-        if self.orgs:
-            self.org_combo.current(0)
+        if self.default_org in self.orgs:
+            org_index = self.orgs.index(self.default_org)
+            self.org_combo.current(org_index)
             self.update_repos(None)
-            self.update_tree(None)
+
+    def refresh_branches(self):
+        org_name = self.org_combo.get()
+        repo_name = self.repo_combo.get()
+        branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
+
+        self.branches_tree.delete(*self.branches_tree.get_children())
+        self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
+        self.populate_tree(self.branches_tree, branches_structure)
 
     def populate_tree(self, tree, node, parent=''):
-        if type(node) == dict:
-            for k,v in node.items():
-                if len(v) != 0: # Non leaf node
-                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
-                else:
-                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
+        if isinstance(node, dict):
+            for k, v in node.items():
+                new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
                 self.populate_tree(tree, v, new_node)
-        elif type(node) == list:
+        elif isinstance(node, list):
             for v in node:
                 tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
 
@@ -438,21 +448,17 @@ class App:
         org_name = self.org_combo.get()
         repos = self.github_client.get_organization_repos_names(org_name)
         self.repo_combo['values'] = repos
-        if repos:
-            self.repo_combo.current(0)
-            self.update_tree(None)
+        if self.default_repo in repos:
+            repo_index = repos.index(self.default_repo)
+            self.repo_combo.current(repo_index)
+        elif repos:
+            self.repo_combo.current(0)  # Postavite prvi repo ako podrazumevani nije dostupan
+        
+        self.update_tree(None)
 
     def update_tree(self, event):
-        org_name = self.org_combo.get()
-        repo_name = self.repo_combo.get()
- 
-        branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
-
-        self.branches_tree.delete(*self.branches_tree.get_children())
-        self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
-
-        self.populate_tree(self.branches_tree, branches_structure)
-
+        self.refresh_branches()
+        
     def on_right_click(self, event):
         self.menu.delete(0, 'end')  # Clear the menu
 
@@ -1130,7 +1136,20 @@ class TextHandler(object):
     def flush(self):
         pass
 
-
+def load_config():
+    config_path = "C:/Users/Korisnik/Desktop/Branch-Browser - Praksa/Branch-Browser/config.json"
+    if not os.path.exists(config_path):
+        print(f"Config file {config_path} not found. Using default values.")
+        return None
+    
+    try:
+        with open(config_path, "r") as config_file:
+            config = json.load(config_file)
+            return config
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON from config file {config_path}. Using default values.")
+        return None
+    
 def main():
     root = tk.Tk(screenName ='BranchBrowser')
     root.title("BranchBrowser")
@@ -1153,14 +1172,41 @@ def main():
   
     try:
         github_client = GitHubClient(GIT_HOSTNAME, token)
+       
+        config = load_config()
+        default_org = config.get("default_organization") if config else None
+        default_repo = config.get("default_repository") if config else None
+
+        available_organizations = github_client.get_organizations_names()
+
+        if  default_org in available_organizations:
+            app_org = default_org
+        else:
+            print(f"Default organization '{default_org}' not found. Using the first available organization.")
+            app_org = available_organizations[0]
+
+        available_repositories = github_client.get_organization_repos_names(app_org)
+        
+        if default_repo in available_repositories:
+            app_repo = default_repo
+        else:
+            print(f"Default repository '{default_repo}' not found. Using the first available repository.")
+            app_repo = available_repositories[0] 
+
+        app = App(root, github_client, app_org, app_repo)  
+
+        app.org_combo['values'] = available_organizations
+        app.repo_combo['values'] = available_repositories
+
+        app.org_combo.set(app_org)
+        app.repo_combo.set(app_repo)
+        
     except Exception as e:
         print(f"{str(e)}. Exiting...")
         return
-
-    app = App(root, github_client)
-
+        
+    #app = App(root, github_client) 
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()
