@@ -12,6 +12,7 @@ from tkinter import simpledialog
 from github import Github, UnknownObjectException
 import configparser
 import requests
+import win32cred
 
 token = ''
 GIT_HOSTNAME = 'github.com'
@@ -1131,17 +1132,43 @@ class TextHandler(object):
         pass
 
 
+def save_credentials(credential_name, username, password):
+    credential = {
+        'Type': win32cred.CRED_TYPE_GENERIC,
+        'TargetName': credential_name,
+        'UserName': username,
+        'CredentialBlob': password,
+        'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE
+    }
+    win32cred.CredWrite(credential)
+    print(f"Credentials for '{credential_name}' saved successfully.")
+
+
+def get_credentials(credential_name):
+    try:
+        credential = win32cred.CredRead(credential_name, win32cred.CRED_TYPE_GENERIC)
+        username = credential['UserName']
+        password = credential['CredentialBlob'].decode('utf-16')
+        return username, password
+    except Exception as e:
+        return None, None
+
+
 def main():
     root = tk.Tk(screenName ='BranchBrowser')
     root.title("BranchBrowser")
     root.geometry('1200x800')  # Set the size of the window
     root.withdraw()
-    
-    # Show a dialog asking for the GitHub token
-    token_dialog = TokenDialog(root)
 
     global token
-    token  = token_dialog.result
+    tokenEnteredViaTokenDialog = False
+    username, password = get_credentials("BranchBrowser")
+    if not (username and password):
+        token_dialog = TokenDialog(root)
+        token = token_dialog.result
+        tokenEnteredViaTokenDialog = True
+    elif username and password:
+        token = password
 
     root.deiconify()
     root.title("BranchBrowser")
@@ -1153,6 +1180,8 @@ def main():
   
     try:
         github_client = GitHubClient(GIT_HOSTNAME, token)
+        if(tokenEnteredViaTokenDialog):
+            save_credentials("BranchBrowser", "github_token", token)
     except Exception as e:
         print(f"{str(e)}. Exiting...")
         return
