@@ -509,7 +509,6 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
-            
     def refresh_branches(self):
         self.update_tree(None)
         
@@ -517,7 +516,8 @@ class App:
         self.update_repos(None)
         
     def refresh_orgs(self):
-        print(f"")
+        self.orgs = self.github_client.get_organizations_names()
+        self.org_combo['values'] = self.orgs
         
     def manage_submodules(self):
         org_name = self.org_combo.get()
