@@ -1122,27 +1122,6 @@ def get_submodules_info(github_client, org_name, repo_name, branch_name):
 
     return submodules_info
 
-# def get_submodules_info(github_client, org_name: str, repo_name: str, branch_name: str) -> List[Dict[str, str]]:
-#     try:
-#         gitmodules_content = github_client.get_organization_repo_branch_gitmodules_content(org_name, repo_name, branch_name)
-
-#         gitmodules_config = configparser.ConfigParser(allow_no_value=True)
-#         gitmodules_config.read_string(gitmodules_content)
-
-#         submodules_info = []
-#         for section in gitmodules_config.sections():
-#             submodule_info = {
-#                 'path': gitmodules_config.get(section, 'path'),
-#                 'url': gitmodules_config.get(section, 'url')
-#             }
-#             submodules_info.append(submodule_info)
-        
-#         return submodules_info
-    
-#     except Exception as e:
-#         print(f"Error while retreiving or parsing .gitmodules: {e}")
-#         return []
-
 # Calculate submodule path (folder) - default is same as submodule repo name
 def calculate_submodule_path(org_name, sub_repo_name):
     calculated_path = sub_repo_name
