@@ -8,10 +8,11 @@ import threading
 import tkinter as tk
 from tkinter import font
 import tkinter.ttk as ttk
-from tkinter import simpledialog
-from github import Github, UnknownObjectException
+from tkinter import simpledialog, messagebox
+from github import Github, UnknownObjectException, GithubException
 import configparser
 import requests
+from typing import List, Dict
 
 token = ''
 GIT_HOSTNAME = 'github.com'
@@ -53,6 +54,20 @@ class GitHubClient:
         ref = self.github.get_organization(org_name).get_repo(repo_name).get_git_ref(f"heads/{branch_name}")
         # Delete the branch by deleting its reference
         ref.delete()
+
+    def organization_repo_delete_branch_with_submodules(self, org_name, repo_name, branch_name):
+        try:
+            repo = self.github.get_organization(org_name).get_repo(repo_name)
+            ref = repo.get_git_ref(f"heads/{branch_name}")
+            ref.delete()
+            print(f"Deleted branch '{branch_name}' from repository '{repo_name}'.")
+        except GithubException as e:
+            if e.status == 404:
+                print(f"Branch '{branch_name}' not found in repository '{repo_name}' (possibly already deleted).")
+
+            else:
+                print(f"Error deleting branch '{branch_name}' from '{repo_name}': {e}")
+                raise e
 
     def get_repo_branches_structure(self, org_name, repo_name):
         repo = self.github.get_organization(org_name).get_repo(repo_name)
@@ -461,6 +476,7 @@ class App:
         if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children)
             self.menu.add_command(label="Create Branch", command=self.create_branch)
             self.menu.add_command(label="Delete Branch", command=self.delete_branch)
+            self.menu.add_command(label="Delete Branch with Submodules", command=self.delete_branch_with_submodules)
             self.menu.add_command(label="Manage Submodules", command=self.manage_submodules)
             org_name = self.org_combo.get()
             repo_name = self.repo_combo.get()
@@ -502,6 +518,42 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+
+    def delete_branch_with_submodules(self):
+        org_name = self.org_combo.get()
+        repo_name = self.repo_combo.get()
+        selected_item = self.last_tree_item_rightclicked
+        branch_name = get_path(self.branches_tree, selected_item)
+        submodules_info = get_submodules_info(self.github_client, org_name, repo_name, branch_name)
+        print(submodules_info)
+
+        if submodules_info:
+            submodules_text = "\n".join([f"- {submodule[1]} (path: {submodule[3]})" for submodule in submodules_info])
+            message = f"The branch '{branch_name}' will be deleted from the following repositories:\n\n{submodules_text}\n\nAre you sure you want to proceed?"
+        else:
+            message = f"No submodules detected for branch '{branch_name}'. Proceed with deletion?"
+
+        if messagebox.askokcancel("Delete Branch with Submodules", message):
+            try:
+                self.github_client.organization_repo_delete_branch_with_submodules(org_name, repo_name, branch_name)
+                for submodule in submodules_info:
+                # Look for the item in the tree using submodule[1] (repo_name) or another identifier
+                    item_found = False
+                    for item in self.branches_tree.get_children():
+                    # Assuming repo_name is stored in the 'text' field or 'tags' field of the tree item
+                        if self.branches_tree.item(item, 'text') == submodule[1]:  # Adjust this line if necessary
+                            self.branches_tree.delete(item)
+                            item_found = True
+                            break
+                
+                if not item_found:
+                    print(f"Item {submodule[1]} not found in the tree.")
+
+                self.update_tree(None)
+                messagebox.showinfo("Success", f"Branch '{branch_name}' was successfully deleted from all specified repositories.")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"An error occured while deleting the branch: {e}")
     
     def manage_submodules(self):
         org_name = self.org_combo.get()
@@ -1070,6 +1122,26 @@ def get_submodules_info(github_client, org_name, repo_name, branch_name):
 
     return submodules_info
 
+# def get_submodules_info(github_client, org_name: str, repo_name: str, branch_name: str) -> List[Dict[str, str]]:
+#     try:
+#         gitmodules_content = github_client.get_organization_repo_branch_gitmodules_content(org_name, repo_name, branch_name)
+
+#         gitmodules_config = configparser.ConfigParser(allow_no_value=True)
+#         gitmodules_config.read_string(gitmodules_content)
+
+#         submodules_info = []
+#         for section in gitmodules_config.sections():
+#             submodule_info = {
+#                 'path': gitmodules_config.get(section, 'path'),
+#                 'url': gitmodules_config.get(section, 'url')
+#             }
+#             submodules_info.append(submodule_info)
+        
+#         return submodules_info
+    
+#     except Exception as e:
+#         print(f"Error while retreiving or parsing .gitmodules: {e}")
+#         return []
 
 # Calculate submodule path (folder) - default is same as submodule repo name
 def calculate_submodule_path(org_name, sub_repo_name):
