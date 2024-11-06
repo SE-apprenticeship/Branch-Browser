@@ -12,7 +12,6 @@ from tkinter import simpledialog, messagebox
 from github import Github, UnknownObjectException, GithubException
 import configparser
 import requests
-from typing import List, Dict
 
 token = ''
 GIT_HOSTNAME = 'github.com'
