@@ -362,22 +362,26 @@ class App:
         print(f'Connected to GitHub with user: {self.username}.')
 
     def setup_ui(self):
+        self.menu_bar = tk.Menu(self.root)
+        
+        self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
+        self.refresh_menu.add_command(label="Refresh organizations", command=self.refresh_orgs)
+        self.refresh_menu.add_command(label="Refresh repos", command=self.refresh_repos) 
+        self.refresh_menu.add_command(label="Refresh branches", command=self.refresh_branches)
+        self.menu_bar.add_cascade(label="Refresh", menu=self.refresh_menu)
+        
+        self.root.config(menu=self.menu_bar)
+        
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
-
         self.branches_tree = ttk.Treeview(self.frame, selectmode="none")
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
 
-
-        self.menu = tk.Menu(self.root, tearoff=0)
-
         self.username = self.github_client.get_username()
         self.username_label = tk.Label(self.root, text=f"Logged in as: {self.username}")
         self.username_label.pack(side='top', fill='x')
-        #Refresh button
-        self.refresh = tk.Button(self.root,text="Refresh", command= self.refresh_branches())
-        self.refresh.pack(padx=20, pady=20)
+
 
         self.orgs = self.github_client.get_organizations_names()
         self.org_label = tk.Label(self.root, text="Organization:")
@@ -505,10 +509,16 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
-    
+            
     def refresh_branches(self):
+        self.update_tree(None)
+        
+    def refresh_repos(self):
+        self.update_repos(None)
+        
+    def refresh_orgs(self):
         print(f"")
-    
+        
     def manage_submodules(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
