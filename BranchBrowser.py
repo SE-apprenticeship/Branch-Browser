@@ -354,6 +354,7 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 
 class App:
+     # Initialize the application with GitHub client, organization, and repository details
     def __init__(self, root, github_client, org, repo):
         self.root = root
         self.github_client = github_client
@@ -362,7 +363,7 @@ class App:
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
-        self.refresh_branches()
+        self.refresh_branches() # Refreshing branches for display
         print(f'Connected to GitHub with user: {self.username}.')
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
@@ -373,7 +374,6 @@ class App:
         self.branches_tree = ttk.Treeview(self.frame, selectmode="none")
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
-
 
         self.menu = tk.Menu(self.root, tearoff=0)
 
@@ -426,6 +426,7 @@ class App:
             self.org_combo.current(org_index)
             self.update_repos(None)
 
+    # Refresh branches tree view with the latest branch structure for selected organization and repository
     def refresh_branches(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
@@ -435,6 +436,7 @@ class App:
         self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
         self.populate_tree(self.branches_tree, branches_structure)
 
+    # Recursively populate branches tree with nested branch structure
     def populate_tree(self, tree, node, parent=''):
         if isinstance(node, dict):
             for k, v in node.items():
@@ -444,6 +446,7 @@ class App:
             for v in node:
                 tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
 
+    # Update repository combo box based on selected organization and set default if available
     def update_repos(self, event):
         org_name = self.org_combo.get()
         repos = self.github_client.get_organization_repos_names(org_name)
@@ -452,10 +455,11 @@ class App:
             repo_index = repos.index(self.default_repo)
             self.repo_combo.current(repo_index)
         elif repos:
-            self.repo_combo.current(0)  # Postavite prvi repo ako podrazumevani nije dostupan
+            self.repo_combo.current(0)
         
         self.update_tree(None)
 
+    # Refresh tree view with branches from the selected repository
     def update_tree(self, event):
         self.refresh_branches()
         
@@ -1135,9 +1139,9 @@ class TextHandler(object):
 
     def flush(self):
         pass
-
+# Load configuration settings from 'config.json', or use defaults if file is missing or invalid
 def load_config():
-    config_path = "C:/Users/Korisnik/Desktop/Branch-Browser - Praksa/Branch-Browser/config.json"
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
     if not os.path.exists(config_path):
         print(f"Config file {config_path} not found. Using default values.")
         return None
@@ -1167,45 +1171,53 @@ def main():
     root.geometry('1400x800')  # Set the size of the window
 
     if not token:
+        # Check if a GitHub token is provided; exit if not
         print("No token provided. Exiting...")
         return
   
     try:
+        # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(GIT_HOSTNAME, token)
        
+       # Load configuration and get default organization/repository
         config = load_config()
         default_org = config.get("default_organization") if config else None
         default_repo = config.get("default_repository") if config else None
 
+        # Get list of available organizations
         available_organizations = github_client.get_organizations_names()
 
         if  default_org in available_organizations:
-            app_org = default_org
+            app_org = default_org # Use default organization if available
         else:
+            # Fallback to first available organization if default not found
             print(f"Default organization '{default_org}' not found. Using the first available organization.")
             app_org = available_organizations[0]
 
+        # Get list of repositories for the selected organization
         available_repositories = github_client.get_organization_repos_names(app_org)
         
         if default_repo in available_repositories:
-            app_repo = default_repo
+            app_repo = default_repo # Use default repository if available
         else:
+            # Fallback to first available repository if default not found
             print(f"Default repository '{default_repo}' not found. Using the first available repository.")
             app_repo = available_repositories[0] 
 
         app = App(root, github_client, app_org, app_repo)  
 
+        # Populate combo boxes with available organizations and repositories
         app.org_combo['values'] = available_organizations
         app.repo_combo['values'] = available_repositories
 
+        # Set selected organization and repository in the UI
         app.org_combo.set(app_org)
         app.repo_combo.set(app_repo)
         
     except Exception as e:
         print(f"{str(e)}. Exiting...")
         return
-        
-    #app = App(root, github_client) 
+
     root.mainloop()
 
 if __name__ == "__main__":
