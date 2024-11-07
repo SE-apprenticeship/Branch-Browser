@@ -1178,7 +1178,7 @@ def main():
             github_client = GitHubClient(GIT_HOSTNAME, token)
             if tokenEnteredViaTokenDialog:
                 save_credentials("BranchBrowser", "github_token", token)
-                break
+            break
         except Exception as e:
             print("Wrong credentials. Entered token is not valid.")
             
