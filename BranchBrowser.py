@@ -365,10 +365,10 @@ class App:
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
 
-        self.vertical_scrollbar = Scrollbar(self.frame)
+        self.vertical_scrollbar = Scrollbar(self.frame, orient=tk.VERTICAL)
         self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
         
-        self.horizontal_scrollbar = Scrollbar(self.frame, orient="horizontal")
+        self.horizontal_scrollbar = Scrollbar(self.frame, orient=tk.HORIZONTAL)
         self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
         
         self.branches_tree = ttk.Treeview(self.frame, selectmode="none",yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
