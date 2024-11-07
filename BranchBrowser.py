@@ -371,7 +371,7 @@ class App:
         self.horizontal_scrollbar = Scrollbar(self.frame, orient=tk.HORIZONTAL)
         self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
         
-        self.branches_tree = ttk.Treeview(self.frame, selectmode="none",yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
+        self.branches_tree = ttk.Treeview(self.frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
 
