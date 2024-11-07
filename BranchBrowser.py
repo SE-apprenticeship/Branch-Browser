@@ -1163,28 +1163,29 @@ def main():
     global token
     tokenEnteredViaTokenDialog = False
     username, password = get_credentials("BranchBrowser")
-    if not (username and password):
-        token_dialog = TokenDialog(root)
-        token = token_dialog.result
-        tokenEnteredViaTokenDialog = True
-    elif username and password:
-        token = password
+   
+    while(True):
+        if not (username and password):
+            token_dialog = TokenDialog(root)
+            token = token_dialog.result
+            if token == None:
+                return
+            tokenEnteredViaTokenDialog = True
+        elif username and password:
+            token = password
+
+        try:
+            github_client = GitHubClient(GIT_HOSTNAME, token)
+            if tokenEnteredViaTokenDialog:
+                save_credentials("BranchBrowser", "github_token", token)
+                break
+        except Exception as e:
+            print("Wrong credentials. Entered token is not valid.")
+            
 
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
-
-    if not token:
-        print("No token provided. Exiting...")
-        return
-  
-    try:
-        github_client = GitHubClient(GIT_HOSTNAME, token)
-        if(tokenEnteredViaTokenDialog):
-            save_credentials("BranchBrowser", "github_token", token)
-    except Exception as e:
-        print(f"{str(e)}. Exiting...")
-        return
 
     app = App(root, github_client)
 
