@@ -403,7 +403,12 @@ class App:
         self.log_label = tk.Label(self.root, text="Log:")
         self.log_label.pack(side='top', fill='x')
         text = tk.Text(self.root, state='disabled')  # Create a Text widget
+        
+        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=text.yview)
+        self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
+        
         text.pack(side='top', fill='both', expand=True)
+        text.config(yscrollcommand=self.vertical_log_scrollbar.set)
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(text)
 
