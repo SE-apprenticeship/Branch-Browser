@@ -363,7 +363,6 @@ class App:
 
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
-        
         self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
         self.refresh_menu.add_command(label="Refresh organizations", command=self.refresh_orgs)
         self.refresh_menu.add_command(label="Refresh repos", command=self.refresh_repos) 
