@@ -6,7 +6,7 @@ import re
 import sys
 import threading
 import tkinter as tk
-from tkinter import font
+from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, UnknownObjectException
@@ -373,9 +373,21 @@ class App:
         
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
-        self.branches_tree = ttk.Treeview(self.frame, selectmode="none")
+
+        self.vertical_scrollbar = Scrollbar(self.frame, orient=tk.VERTICAL)
+        self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
+        
+        self.horizontal_scrollbar = Scrollbar(self.frame, orient=tk.HORIZONTAL)
+        self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
+        
+        self.branches_tree = ttk.Treeview(self.frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
+
+        self.vertical_scrollbar.config(command=self.branches_tree.yview)
+        self.horizontal_scrollbar.config(command=self.branches_tree.xview)
+        
+        self.menu = tk.Menu(self.root, tearoff=0)
 
         self.username = self.github_client.get_username()
         self.username_label = tk.Label(self.root, text=f"Logged in as: {self.username}")
@@ -401,7 +413,12 @@ class App:
         self.log_label = tk.Label(self.root, text="Log:")
         self.log_label.pack(side='top', fill='x')
         text = tk.Text(self.root, state='disabled')  # Create a Text widget
+        
+        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=text.yview)
+        self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
+        
         text.pack(side='top', fill='both', expand=True)
+        text.config(yscrollcommand=self.vertical_log_scrollbar.set)
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(text)
 
