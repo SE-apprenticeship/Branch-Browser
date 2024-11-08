@@ -485,6 +485,7 @@ class App:
         if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children)
             self.menu.add_command(label="Create Branch", command=self.create_branch)
             self.menu.add_command(label="Delete Branch", command=self.delete_branch)
+            self.menu.add_command(label="Delete Branch with Submodules", command=self.delete_branch_with_submodules)
             self.menu.add_command(label="Manage Submodules", command=self.manage_submodules)
             org_name = self.org_combo.get()
             repo_name = self.repo_combo.get()
@@ -526,6 +527,36 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+
+    def delete_branch_with_submodules(self):
+        org_name = self.org_combo.get()
+        repo_name = self.repo_combo.get()
+        selected_item = self.last_tree_item_rightclicked
+        branch_name = get_path(self.branches_tree, selected_item)
+
+        # Fetching all organization repositories
+        repo_names = self.github_client.get_organization_repos_names(org_name)
+        print(repo_names)
+
+        repos_with_branch = []
+
+        for repo_name in repo_names:
+            branches = self.github_client.get_organization_repo_branches(org_name, repo_name)
+            print(branches)
+            if branch_name not in branches:
+                continue
+            else:
+                repos_with_branch.append(repo_name)
+
+        result = DeleteWithSubmodulesDialog(self.root, self.github_client, org_name, branch_name, repos_with_branch).result
+
+        if result:
+            print(f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
+            self.update_tree(None)
+        else:
+            print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+
+
     def refresh_branches(self):
         self.update_tree(None)
         
@@ -627,6 +658,33 @@ class DeleteDialog(simpledialog.Dialog):
         self.github_client.organization_repo_delete_branch(self.org_name, self.repo_name, self.branch_name)
         print(f"Deleted branch {self.branch_name}.")
         self.result = self.branch_name
+
+class DeleteWithSubmodulesDialog(simpledialog.Dialog):
+    def __init__(self, parent, github_client, org_name, branch_name, repos_with_branch):
+        self.github_client = github_client
+        self.org_name = org_name
+        self.branch_name = branch_name
+        self.repos_with_branch = repos_with_branch
+
+        super().__init__(parent, title=f"Delete branch '{branch_name}' in organization '{org_name}'")
+
+    def body(self, master):
+        self.resizable(False, False)
+
+        tk.Label(master, text=f"Are you sure you want to delete branch '{self.branch_name}' in the following repositories?").grid(row=0, column=0, padx=10, pady=10)
+
+        repo_list_text = "\n".join(self.repos_with_branch)
+        tk.Label(master, text=repo_list_text, justify="left").grid(row=1, column=0, padx=10, pady=10)
+
+        tk.Label(master, text="This action cannot be undone.").grid(row=2, column=0, padx=10, pady=10)
+
+    def apply(self):
+        for repo_name in self.repos_with_branch:
+            self.github_client.organization_repo_delete_branch(self.org_name, repo_name, self.branch_name)
+            print(f"Deleted branch '{self.branch_name}' in repository '{repo_name}'.")
+        
+        self.result = self.branch_name
+
 
 
 class RepoBranchListBoxInfo:
