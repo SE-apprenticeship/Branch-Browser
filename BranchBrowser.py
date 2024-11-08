@@ -7,12 +7,13 @@ import re
 import sys
 import threading
 import tkinter as tk
-from tkinter import font
+from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, UnknownObjectException
 import configparser
 import requests
+import win32cred
 
 token = ''
 GIT_HOSTNAME = 'github.com'
@@ -363,24 +364,41 @@ class App:
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
-        #self.refresh_branches() # Refreshing branches for display
-        self.username = self.github_client.get_username()
         print(f'Connected to GitHub with user: {self.username}.')
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
     def setup_ui(self):
+        self.menu_bar = tk.Menu(self.root)
+        self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
+        self.refresh_menu.add_command(label="Refresh organizations", command=self.refresh_orgs)
+        self.refresh_menu.add_command(label="Refresh repos", command=self.refresh_repos) 
+        self.refresh_menu.add_command(label="Refresh branches", command=self.refresh_branches)
+        self.menu_bar.add_cascade(label="Refresh", menu=self.refresh_menu)
+        
+        self.root.config(menu=self.menu_bar)
+        
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
 
-        self.branches_tree = ttk.Treeview(self.frame, selectmode="none")
+        self.vertical_scrollbar = Scrollbar(self.frame, orient=tk.VERTICAL)
+        self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
+        
+        self.horizontal_scrollbar = Scrollbar(self.frame, orient=tk.HORIZONTAL)
+        self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
+        
+        self.branches_tree = ttk.Treeview(self.frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
 
+        self.vertical_scrollbar.config(command=self.branches_tree.yview)
+        self.horizontal_scrollbar.config(command=self.branches_tree.xview)
+        
         self.menu = tk.Menu(self.root, tearoff=0)
 
         self.username = self.github_client.get_username()
         self.username_label = tk.Label(self.root, text=f"Logged in as: {self.username}")
         self.username_label.pack(side='top', fill='x')
+
 
         self.orgs = self.github_client.get_organizations_names()
         self.org_label = tk.Label(self.root, text="Organization:")
@@ -401,7 +419,12 @@ class App:
         self.log_label = tk.Label(self.root, text="Log:")
         self.log_label.pack(side='top', fill='x')
         text = tk.Text(self.root, state='disabled')  # Create a Text widget
+        
+        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=text.yview)
+        self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
+        
         text.pack(side='top', fill='both', expand=True)
+        text.config(yscrollcommand=self.vertical_log_scrollbar.set)
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(text)
 
@@ -428,7 +451,7 @@ class App:
             self.update_repos(None)
 
     # Refresh branches tree view with the latest branch structure for selected organization and repository
-    def refresh_branches(self):
+    def refresh_branches_by_config(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
@@ -462,7 +485,7 @@ class App:
 
     # Refresh tree view with branches from the selected repository
     def update_tree(self, event):
-        self.refresh_branches()
+        self.refresh_branches_by_config()
         
     def on_right_click(self, event):
         self.menu.delete(0, 'end')  # Clear the menu
@@ -513,7 +536,16 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
-    
+    def refresh_branches(self):
+        self.update_tree(None)
+        
+    def refresh_repos(self):
+        self.update_repos(None)
+        
+    def refresh_orgs(self):
+        self.orgs = self.github_client.get_organizations_names()
+        self.org_combo['values'] = self.orgs
+        
     def manage_submodules(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
@@ -1161,28 +1193,66 @@ def select_default_or_first(default_value, available_values, entity_name):
     else:
         print(f"Default {entity_name} '{default_value}' not found. Using the first available {entity_name}.")
         return available_values[0] 
-     
+
+def save_credentials(credential_name, username, password):
+    credential = {
+        'Type': win32cred.CRED_TYPE_GENERIC,
+        'TargetName': credential_name,
+        'UserName': username,
+        'CredentialBlob': password,
+        'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE
+    }
+    win32cred.CredWrite(credential)
+    print(f"Credentials for '{credential_name}' saved successfully.")
+
+def get_credentials(credential_name):
+    try:
+        credential = win32cred.CredRead(credential_name, win32cred.CRED_TYPE_GENERIC)
+        username = credential['UserName']
+        password = credential['CredentialBlob'].decode('utf-16')
+        return username, password
+    except Exception as e:
+        return None, None
+
 def main():
-    root = tk.Tk(screenName ='BranchBrowser')
+    global token
+    root = tk.Tk(screenName='BranchBrowser')
     root.title("BranchBrowser")
     root.geometry('1200x800')  # Set the size of the window
     root.withdraw()
     
-    # Show a dialog asking for the GitHub token
-    token_dialog = TokenDialog(root)
+    tokenEnteredViaTokenDialog = False
+    username, password = get_credentials("BranchBrowser")
+   
+    while(True):
+        if not (username and password):
+            token_dialog = TokenDialog(root)
+            token = token_dialog.result
+            if token == None:
+                return
+            tokenEnteredViaTokenDialog = True
+        elif username and password:
+            token = password
 
-    global token
-    token  = token_dialog.result
+        try:
+            github_client = GitHubClient(GIT_HOSTNAME, token)
+            if tokenEnteredViaTokenDialog:
+                save_credentials("BranchBrowser", "github_token", token)
+            break
+        except Exception as e:
+            print("Wrong credentials. Entered token is not valid.")
+    # Show a dialog asking for the GitHub token if not already set
+    if not token:
+        token_dialog = TokenDialog(root)
+        token = token_dialog.result
+        if not token:
+            print("No token provided. Exiting...")
+            return
 
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
-
-    if not token:
-        # Check if a GitHub token is provided; exit if not
-        print("No token provided. Exiting...")
-        return
-  
+    
     try:
         config = load_config()
         git_hostname = config.get("GIT_HOSTNAME", "github.com")
@@ -1199,7 +1269,7 @@ def main():
 
         # Get list of repositories for the selected organization
         available_repositories = github_client.get_organization_repos_names(app_org)
-        app_repo = select_default_or_first (default_repo, available_repositories, "repository")
+        app_repo = select_default_or_first(default_repo, available_repositories, "repository")
 
         app = App(root, github_client, app_org, app_repo)  
 
