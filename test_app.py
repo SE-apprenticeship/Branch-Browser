@@ -20,13 +20,13 @@ class TestAppMethods(unittest.TestCase):
         # Ensure get_children() returns a list (or any iterable)
         self.app.branches_tree.get_children.return_value = ['child1', 'child2']
 
-    def test_refresh_branches(self):
+    def test_refresh_branches_by_config(self):
         self.app.org_combo.get.return_value = "TestOrg"
         self.app.repo_combo.get.return_value = "TestRepo"
         branches_structure = {"main": ["feature1", "feature2"], "dev": ["hotfix"]}
         self.mock_github_client.get_repo_branches_structure.return_value = branches_structure
 
-        self.app.refresh_branches()
+        self.app.refresh_branches_by_config()
 
         # Test that the delete method is called with the iterable returned by get_children()
         self.app.branches_tree.delete.assert_called_once_with('child1', 'child2')
@@ -48,11 +48,11 @@ class TestAppMethods(unittest.TestCase):
         self.app.repo_combo.current.assert_called_once_with(1)
         mock_update_tree.assert_called_once()
 
-    @patch.object(App, 'refresh_branches')
-    def test_update_tree(self, mock_refresh_branches):
+    @patch.object(App, 'refresh_branches_by_config')
+    def test_update_tree(self, mock_refresh_branches_by_config):
         self.app.update_tree(event=None)
 
-        mock_refresh_branches.assert_called_once()
+        mock_refresh_branches_by_config.assert_called_once()
 
     @patch("builtins.open", new_callable=mock_open, read_data='{"default_organization": "TestOrg", "default_repository": "TestRepo"}')
     def test_load_config_valid(self, mock_file):

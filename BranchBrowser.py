@@ -364,6 +364,7 @@ class App:
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
+        self.username = self.github_client.get_username()
         print(f'Connected to GitHub with user: {self.username}.')
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
