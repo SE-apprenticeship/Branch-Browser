@@ -363,7 +363,8 @@ class App:
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
-        self.refresh_branches() # Refreshing branches for display
+        #self.refresh_branches() # Refreshing branches for display
+        self.username = self.github_client.get_username()
         print(f'Connected to GitHub with user: {self.username}.')
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
@@ -1153,7 +1154,14 @@ def load_config():
     except json.JSONDecodeError:
         print(f"Error decoding JSON from config file {config_path}. Using default values.")
         return None
-    
+#Returns the default value if available, otherwise selects the first available option with a message.   
+def select_default_or_first(default_value, available_values, entity_name):
+    if default_value in available_values:
+        return default_value
+    else:
+        print(f"Default {entity_name} '{default_value}' not found. Using the first available {entity_name}.")
+        return available_values[0] 
+     
 def main():
     root = tk.Tk(screenName ='BranchBrowser')
     root.title("BranchBrowser")
@@ -1186,23 +1194,11 @@ def main():
 
         # Get list of available organizations
         available_organizations = github_client.get_organizations_names()
-
-        if  default_org in available_organizations:
-            app_org = default_org # Use default organization if available
-        else:
-            # Fallback to first available organization if default not found
-            print(f"Default organization '{default_org}' not found. Using the first available organization.")
-            app_org = available_organizations[0]
+        app_org = select_default_or_first(default_org, available_organizations, "organization")
 
         # Get list of repositories for the selected organization
         available_repositories = github_client.get_organization_repos_names(app_org)
-        
-        if default_repo in available_repositories:
-            app_repo = default_repo # Use default repository if available
-        else:
-            # Fallback to first available repository if default not found
-            print(f"Default repository '{default_repo}' not found. Using the first available repository.")
-            app_repo = available_repositories[0] 
+        app_repo = select_default_or_first (default_repo, available_repositories, "repository")
 
         app = App(root, github_client, app_org, app_repo)  
 
