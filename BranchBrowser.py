@@ -1184,11 +1184,12 @@ def main():
         return
   
     try:
-        # Initialize GitHub client with provided token and hostname
-        github_client = GitHubClient(GIT_HOSTNAME, token)
-       
-       # Load configuration and get default organization/repository
         config = load_config()
+        git_hostname = config.get("GIT_HOSTNAME", "github.com")
+        # Initialize GitHub client with provided token and hostname
+        github_client = GitHubClient(git_hostname, token)
+       
+        # Load configuration and get default organization/repository
         default_org = config.get("default_organization") if config else None
         default_repo = config.get("default_repository") if config else None
 
