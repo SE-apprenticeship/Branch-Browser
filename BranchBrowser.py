@@ -12,7 +12,6 @@ from tkinter import simpledialog
 from github import Github, UnknownObjectException
 import configparser
 import requests
-import subprocess
 
 token = ''
 GIT_HOSTNAME = 'github.com'
