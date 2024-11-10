@@ -12,16 +12,18 @@ from tkinter import simpledialog
 from github import Github, UnknownObjectException
 import configparser
 import requests
+from delete_with_submodules_dialog import DeleteWithSubmodulesDialog
 
 token = ''
 GIT_HOSTNAME = 'github.com'
+
 
 class GitHubClient:
     def __init__(self, hostname, token):
         self.github = Github(base_url=f"https://api.{hostname}", login_or_token=token)
         self.user = self.github.get_user()
-        self.username = self.user.login # this will throw exception if token is invalid
-    
+        self.username = self.user.login  # this will throw exception if token is invalid
+
     def get_username(self):
         return self.username
 
@@ -527,34 +529,132 @@ class App:
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
 
+
+    def get_selected_branch_details(self):
+        """
+        Helper function to get and validate the selected organization, repository,
+        and branch names.
+
+        Returns:
+            tuple: A tuple containing the organization name, repository name, and branch name.
+            - If any of the values are invalid, the function returns None for the corresponding value.
+        """
+        # Get the selected organization and repository names from the UI combo boxes
+        org_name = self.org_combo.get()  # Organization name selected by the user
+        repo_name = self.repo_combo.get()  # Repository name selected by the user
+
+        # Validate organization name
+        if not org_name:
+            print("Error: Organization name is not selected!")
+            return None, None, None  # Return None for all values if organization is invalid
+        
+        # Validate repository name (if repository name is selected)
+        if repo_name and not repo_name.strip():
+            print("Error: Repository name is invalid!")
+            return org_name, None, None  # Return None for repository if invalid
+        
+        # Get the branch name from the last right-clicked item in the branches tree view
+        selected_item = self.last_tree_item_rightclicked  # Last item right-clicked in the branches tree
+        branch_name = get_path(self.branches_tree, selected_item)  # Extract the branch name from the selected item
+
+        # Validate branch name
+        if not branch_name:
+            print("Error: Branch name is not selected or invalid")
+            return org_name, repo_name, None  # Return None for branch if invalid
+        
+        return org_name, repo_name, branch_name
+
     def delete_branch_with_submodules(self):
-        org_name = self.org_combo.get()
-        repo_name = self.repo_combo.get()
-        selected_item = self.last_tree_item_rightclicked
-        branch_name = get_path(self.branches_tree, selected_item)
+        """
+        Deletes a branch from a repository within an organization, including handling submodules.
+        This method will check which repositories contain the branch, present the user with a confirmation dialog,
+        and delete the branch from the selected repositories if the user confirms.
 
-        # Fetching all organization repositories
-        repo_names = self.github_client.get_organization_repos_names(org_name)
-        print(repo_names)
+        Outgoing Parameters:
+        - None (The method operates based on UI interactions and updates state, but does not return a value directly).
+        
+        Side Effects:
+        - Prints information to the console for logging purposes.
+        - If the user confirms, it calls the `DeleteWithSubmodulesDialog` to attempt branch deletion in the repositories.
+        - Updates the UI via `self.update_tree()` to reflect changes.
+        """
 
+        # Get the selected organization, repository, and branch names using the helper function
+        org_name, repo_name, branch_name = self.get_selected_branch_details()
+
+        # # If any value is None, it means validation failed, so exit the method
+        if not org_name or not branch_name:
+            return  # Exit the method if any validation failed
+
+        # Fetch all repositories in the selected organization
+        try:
+            repository_names = self.github_client.get_organization_repos_names(org_name)  # List of repository names in the organization
+        except Exception as e:
+            print(f"Error: Unable to fetch repositories for organization '{org_name}': {str(e)}")
+            return  # Exit if there was an error fetching repositories
+
+        # Validate that at least one repository exists
+        if not repository_names:
+            print(f"Error: No repositories for organization '{org_name}'.")
+            return  # Exit if no repositories are found
+        
+        # Validate that the selected repository exists in the list of repositories (if provided)
+        if repo_name:
+            if repo_name not in repository_names:
+                print(f"Error: Repository '{repo_name}' is not found in organization '{org_name}'.")
+                return  # Exit if selected repository is not valid or doesn't exist
+            # If selected repository is valid, we can proceed with it
+            print(f"Valid repository selected: {repo_name}")
+
+        
+        # Fetch branches from each repository and validate branch existence
+        # List to store repositories that have the specified branch
         repos_with_branch = []
 
-        for repo_name in repo_names:
-            branches = self.github_client.get_organization_repo_branches(org_name, repo_name)
-            print(branches)
-            if branch_name not in branches:
+        # Loop through the repositories to check if they contain the specified branch
+        for repository_name in repository_names:
+            try:
+                branches = self.github_client.get_organization_repo_branches(org_name, repository_name)  # Fetch branches for the repo
+            except Exception as e:
+                print(f"Error: Unable to fetch branches for repository '{repository_name}': {str(e)}")
                 continue
-            else:
-                repos_with_branch.append(repo_name)
 
-        result = DeleteWithSubmodulesDialog(self.root, self.github_client, org_name, branch_name, repos_with_branch).result
 
+            if branch_name in branches:  # If the branch exists in the repository
+                repos_with_branch.append(repository_name)  # Add the repository to the list of repos containing the branch
+                print(f"Added repository: '{repository_name}'")
+
+        # Print the repositories that have the branch
+        print(f"Repos where {branch_name} is present: {repos_with_branch}")
+
+         # If no repositories contain the branch, print an error message and return
+        if not repos_with_branch:
+            print(f"Error: No repositories contain the branch '{branch_name}'."
+                  + " Deletion cannot proceed.")
+            return  # Exit the method if no repositories contain the branch
+
+        # Show the DeleteWithSubmodulesDialog to confirm deletion of the branch with submodule handling
+        result = DeleteWithSubmodulesDialog(
+            self.root, 
+            self.github_client, 
+            org_name, 
+            branch_name, 
+            repos_with_branch
+        ).result  # Get the result of the dialog (True if confirmed, False if canceled)
+
+        # If the user confirmed, delete the branch and update the UI
         if result:
-            print(f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
-            self.update_tree(None)
-        else:
-            print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+            for repo_name in repos_with_branch:
+                # Deleting the branch from the repository
+                self.github_client.organization_repo_delete_branch(
+                    org_name, repository_name, branch_name)
+                # Log the deletion for each repository
+                print(f"Branch deleted: {branch_name} on {org_name}/{repository_name}.")
+                self.update_tree(None)  # Refresh the tree view to reflect changes
 
+        else:
+            # If the user canceled, print a message indicating cancellation
+            print(f"Deleting branch {branch_name} on {org_name}/{repository_name} canceled!")
 
     def refresh_branches(self):
         self.update_tree(None)
@@ -657,33 +757,6 @@ class DeleteDialog(simpledialog.Dialog):
         self.github_client.organization_repo_delete_branch(self.org_name, self.repo_name, self.branch_name)
         print(f"Deleted branch {self.branch_name}.")
         self.result = self.branch_name
-
-class DeleteWithSubmodulesDialog(simpledialog.Dialog):
-    def __init__(self, parent, github_client, org_name, branch_name, repos_with_branch):
-        self.github_client = github_client
-        self.org_name = org_name
-        self.branch_name = branch_name
-        self.repos_with_branch = repos_with_branch
-
-        super().__init__(parent, title=f"Delete branch '{branch_name}' in organization '{org_name}'")
-
-    def body(self, master):
-        self.resizable(False, False)
-
-        tk.Label(master, text=f"Are you sure you want to delete branch '{self.branch_name}' in the following repositories?").grid(row=0, column=0, padx=10, pady=10)
-
-        repo_list_text = "\n".join(self.repos_with_branch)
-        tk.Label(master, text=repo_list_text, justify="left").grid(row=1, column=0, padx=10, pady=10)
-
-        tk.Label(master, text="This action cannot be undone.").grid(row=2, column=0, padx=10, pady=10)
-
-    def apply(self):
-        for repo_name in self.repos_with_branch:
-            self.github_client.organization_repo_delete_branch(self.org_name, repo_name, self.branch_name)
-            print(f"Deleted branch '{self.branch_name}' in repository '{repo_name}'.")
-        
-        self.result = self.branch_name
-
 
 
 class RepoBranchListBoxInfo:
