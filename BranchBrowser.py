@@ -588,25 +588,27 @@ class App:
 
         # Fetch all repositories in the selected organization
         try:
-            repository_names = self.github_client.get_organization_repos_names(org_name)  # List of repository names in the organization
+            repository_names = self.github_client.get_organization_repos_names(
+                org_name)  # List of repository names in the organization
         except Exception as e:
-            print(f"Error: Unable to fetch repositories for organization '{org_name}': {str(e)}")
+            print(
+                f"Error: Unable to fetch repositories for organization '{org_name}': {str(e)}")
             return  # Exit if there was an error fetching repositories
 
         # Validate that at least one repository exists
         if not repository_names:
             print(f"Error: No repositories for organization '{org_name}'.")
             return  # Exit if no repositories are found
-        
+
         # Validate that the selected repository exists in the list of repositories (if provided)
         if repo_name:
             if repo_name not in repository_names:
-                print(f"Error: Repository '{repo_name}' is not found in organization '{org_name}'.")
+                print(
+                    f"Error: Repository '{repo_name}' is not found in organization '{org_name}'.")
                 return  # Exit if selected repository is not valid or doesn't exist
             # If selected repository is valid, we can proceed with it
             print(f"Valid repository selected: {repo_name}")
 
-        
         # Fetch branches from each repository and validate branch existence
         # List to store repositories that have the specified branch
         repos_with_branch = []
@@ -614,20 +616,22 @@ class App:
         # Loop through the repositories to check if they contain the specified branch
         for repository_name in repository_names:
             try:
-                branches = self.github_client.get_organization_repo_branches(org_name, repository_name)  # Fetch branches for the repo
+                branches = self.github_client.get_organization_repo_branches(
+                    org_name, repository_name)  # Fetch branches for the repo
             except Exception as e:
-                print(f"Error: Unable to fetch branches for repository '{repository_name}': {str(e)}")
+                print(
+                    f"Error: Unable to fetch branches for repository '{repository_name}': {str(e)}")
                 continue
 
-
             if branch_name in branches:  # If the branch exists in the repository
-                repos_with_branch.append(repository_name)  # Add the repository to the list of repos containing the branch
+                # Add the repository to the list of repos containing the branch
+                repos_with_branch.append(repository_name)
                 print(f"Added repository: '{repository_name}'")
 
         # Print the repositories that have the branch
         print(f"Repos where {branch_name} is present: {repos_with_branch}")
 
-         # If no repositories contain the branch, print an error message and return
+        # If no repositories contain the branch, print an error message and return
         if not repos_with_branch:
             print(f"Error: No repositories contain the branch '{branch_name}'."
                   + " Deletion cannot proceed.")
@@ -635,12 +639,13 @@ class App:
 
         # Show the DeleteWithSubmodulesDialog to confirm deletion of the branch with submodule handling
         result = DeleteWithSubmodulesDialog(
-            self.root, 
-            self.github_client, 
-            org_name, 
-            branch_name, 
+            self.root,
+            self.github_client,
+            org_name,
+            branch_name,
             repos_with_branch
-        ).result  # Get the result of the dialog (True if confirmed, False if canceled)
+            # Get the result of the dialog (True if confirmed, False if canceled)
+        ).result
 
         # If the user confirmed, delete the branch and update the UI
         if result:
@@ -649,12 +654,15 @@ class App:
                 self.github_client.organization_repo_delete_branch(
                     org_name, repository_name, branch_name)
                 # Log the deletion for each repository
-                print(f"Branch deleted: {branch_name} on {org_name}/{repository_name}.")
-                self.update_tree(None)  # Refresh the tree view to reflect changes
+                print(
+                    f"Branch deleted: {branch_name} on {org_name}/{repository_name}.")
+                # Refresh the tree view to reflect changes
+                self.update_tree(None)
 
         else:
             # If the user canceled, print a message indicating cancellation
-            print(f"Deleting branch {branch_name} on {org_name}/{repository_name} canceled!")
+            print(
+                f"Deleting branch {branch_name} on {org_name}/{repository_name} canceled!")
 
     def refresh_branches(self):
         self.update_tree(None)

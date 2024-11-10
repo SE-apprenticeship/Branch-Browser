@@ -1,14 +1,35 @@
+"""
+This module defines the `DeleteWithSubmodulesDialog` class, which provides
+a GUI dialog for confirming the deletion of a branch in multiple GitHub
+repositories. It handles the confirmation and deletion process, including
+handling repositories with submodules.
+
+Classes:
+    DeleteWithSubmodulesDialog: A custom dialog class for confirming branch
+    deletions across repositories in a GitHub organization, with submodule
+    handling.
+
+Usage:
+    This module is used in the context of a larger GitHub management tool
+    that interacts with the GitHub API and allows users to manage branches
+    across multiple repositories, including repositories with submodules.
+"""
+
 import tkinter as tk
 from tkinter import simpledialog
 import logging
 
 # Set up logging configuration
 logging.basicConfig(
-    filename='branch_deletion_with_submodules.log',  # The log file where the messages will be stored
-    level=logging.INFO,  # Log messages of this level or higher (INFO, WARNING, ERROR, etc.)
-    format='%(asctime)s - %(levelname)s - %(message)s',  # Format of the log messages
+    # The log file where the messages will be stored
+    filename='branch_deletion_with_submodules.log',
+    # Log messages of this level or higher (INFO, WARNING, ERROR, etc.)
+    level=logging.INFO,
+    # Format of the log messages
+    format='%(asctime)s - %(levelname)s - %(message)s',
     filemode='a'  # Append to the file, don't overwrite
 )
+
 
 class DeleteWithSubmodulesDialog(simpledialog.Dialog):
     """
@@ -50,7 +71,7 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
         tk.Label(
             master,
             text=f"Are you sure you want to delete branch '{self.branch_name}' "
-                 f"in the following repositories?"
+            f"in the following repositories?"
         ).grid(row=0, column=0, padx=10, pady=10)
 
         # List the repositories with the branch
@@ -66,9 +87,9 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
         """
         Apply the deletion of the branch in each repository.
 
-        This method deletes the specified branch from each repository in `repos_with_branch` 
-        after confirming the action through the dialog. It then verifies if the branch was 
-        actually deleted by checking if the branch still exists. If no repositories are selected, 
+        This method deletes the specified branch from each repository in repos_with_branch
+        after confirming the action through the dialog. It then verifies if the branch was
+        actually deleted by checking if the branch still exists. If no repositories are selected,
         it will display a message and return early.
 
         Args:
@@ -78,7 +99,7 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
             None
 
         Side Effects:
-            - Deletes the branch from each repository in `repos_with_branch`.
+            - Deletes the branch from each repository in repos_with_branch.
             - Prints status messages to the console for each repository where the branch is deleted.
             - Verifies that the branch was deleted and prints confirmation or error.
         """
@@ -92,7 +113,8 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
         # Loop through each repository to delete the branch
         for repo_name in self.repos_with_branch:
             # Log the attempt to delete the branch
-            logging.info(f"Attempting to delete branch '{self.branch_name}' in repository '{repo_name}'.")
+            logging.info(
+                f"Attempting to delete branch '{self.branch_name}' in repository '{repo_name}'.")
 
             try:
                 # Deleting the branch from the repository
@@ -101,24 +123,33 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
                 )
 
                 # Log success of deletion attempt
-                logging.info(f"Branch '{self.branch_name}' successfully deleted in repository '{repo_name}'.")
-                print(f"Branch '{self.branch_name}' deleted successfully in repository '{repo_name}'.")
+                logging.info(
+                    f"Branch '{self.branch_name}' successfully deleted in repository '{repo_name}'.")
+                print(
+                    f"Branch '{self.branch_name}' deleted successfully in repository '{repo_name}'.")
 
                 # Verify if the branch was successfully deleted
-                branches = self.github_client.get_organization_repo_branches(self.org_name, repo_name)
+                branches = self.github_client.get_organization_repo_branches(
+                    self.org_name, repo_name)
 
                 if self.branch_name not in branches:
                     # Log success of verification
-                    logging.info(f"Branch '{self.branch_name}' confirmed deleted in repository '{repo_name}'.")
-                    print(f"Successfully deleted branch '{self.branch_name}' in repository '{repo_name}'.")
+                    logging.info(
+                        f"Branch '{self.branch_name}' confirmed deleted in repository '{repo_name}'.")
+                    print(
+                        f"Successfully deleted branch '{self.branch_name}' in repository '{repo_name}'.")
                 else:
                     # Log failure of verification
-                    logging.error(f"Branch '{self.branch_name}' still exists in repository '{repo_name}' after deletion attempt.")
-                    print(f"Error: Branch '{self.branch_name}' still exists in repository '{repo_name}'.")
+                    logging.error(
+                        f"Branch '{self.branch_name}' still exists in repository '{repo_name}' after deletion attempt.")
+                    print(
+                        f"Error: Branch '{self.branch_name}' still exists in repository '{repo_name}'.")
 
             except Exception as e:
                 # Log the error and continue
-                error_message = f"Error occurred while deleting branch '{self.branch_name}' in repository '{repo_name}': {str(e)}"
+                error_message = f"Error occurred while deleting branch '{self.branch_name}'"
+                error_message += f" in repository '{repo_name}': "
+                error_message += f"{str(e)}"
                 logging.error(error_message)
                 print(error_message)
 
