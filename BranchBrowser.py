@@ -12,8 +12,8 @@ from tkinter import simpledialog
 from github import Github, UnknownObjectException
 import configparser
 import requests
-import win32cred
-import time 
+import win32cred # type: ignore
+import threading 
 token = ''
 GIT_HOSTNAME = 'github.com'
 
@@ -296,10 +296,14 @@ class TreeviewTooltip:
         self.repo_combo = repo_combo
         self.treeview = treeview
         self.tooltip_func = tooltip_func
-        self.tip_window = None
         self.treeview.bind("<Motion>", self.on_motion)
         self.treeview.bind("<Leave>", self.on_leave)
-
+        self.treeview.bind
+        self.delay = 1000
+        self.tooltip_window = None  # Reference to the tooltip window
+        self.tooltip_label = None  # Reference to the label inside the tooltip
+        self.tooltip_timer = None  # Timer to show tooltip after delay
+        self.tooltip_shown = False  # Flag to check if tooltip is displayed
     def on_motion(self, event):
         item = self.treeview.identify_row(event.y)
         if not item:
@@ -307,24 +311,31 @@ class TreeviewTooltip:
             return
 
         if self.treeview.tag_has('has_tooltip', item):
-            if not self.tip_window:
-                self.show_tooltip(item, event.x, event.y)
+            if not self.tooltip_window:
+                self.schedule_tooltip(event, item)
         else:
             self.hide_tooltip()
+                
+    def schedule_tooltip(self, event, item):
+        if self.tooltip_timer:
+            self.treeview.after_cancel(self.tooltip_timer)
+        self.tooltip_timer = self.treeview.after(self.delay, self.show_tooltip , item, event.x, event.y)
 
     def show_tooltip(self, item, x, y):
-        text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
-        if text:
-            self.tip_window = tw = tk.Toplevel(self.treeview)
-            tw.wm_overrideredirect(True)
-            tw.wm_geometry(f"+{x+20+self.treeview.winfo_rootx()}+{y+10+self.treeview.winfo_rooty()}")
-            label = tk.Label(tw, text=text, justify=tk.LEFT, background="#ffffe0", relief=tk.SOLID, borderwidth=1, font=font.Font(family="Consolas", size=8))
-            label.pack(ipadx=1)
-
+        if self.tooltip_window is None:
+            text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
+            if text:
+                self.tooltip_window = tw = tk.Toplevel(self.treeview)
+                tw.wm_overrideredirect(True)
+                tw.wm_geometry(f"+{x+20+self.treeview.winfo_rootx()}+{y+10+self.treeview.winfo_rooty()}")
+                label = tk.Label(tw, text=text, justify=tk.LEFT, background="#ffffe0", relief=tk.SOLID, borderwidth=1, font=font.Font(family="Consolas", size=8))
+                label.pack(ipadx=1)
+        self.tooltip_shown = True
+        
     def hide_tooltip(self):
-        if self.tip_window:
-            self.tip_window.destroy()
-            self.tip_window = None
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
 
     def on_leave(self, event):
         self.hide_tooltip()
@@ -366,7 +377,7 @@ class App:
         self.menu_bar = tk.Menu(self.root)
         self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
         self.refresh_menu.add_command(label="Refresh", command=self.refresh)
-        self.menu_bar.add_cascade(label="Options", menu=self.refresh_menu)
+        self.menu_bar.add_cascade(label="Refresh", menu=self.refresh_menu)
         
         self.root.config(menu=self.menu_bar)
         
@@ -480,7 +491,7 @@ class App:
 
         item = self.branches_tree.identify('item', event.x, event.y)
 
-        if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children)
+        if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children) 
             self.menu.add_command(label="Create Branch", command=self.create_branch)
             self.menu.add_command(label="Delete Branch", command=self.delete_branch)
             self.menu.add_command(label="Manage Submodules", command=self.manage_submodules)
@@ -526,13 +537,7 @@ class App:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
             
     def refresh(self):
-        start_time = time.time()  # Get start time
         self.update_tree(None)
-
-        end_time = time.time()  # Get end time
-    
-        elapsed_time_sec = end_time - start_time  # Time in seconds
-        print(f"Refreshed in: {elapsed_time_sec:.4f} seconds")
         
     def manage_submodules(self):
         org_name = self.org_combo.get()
