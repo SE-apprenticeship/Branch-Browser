@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
-from github import Github, UnknownObjectException
+from github import Github, UnknownObjectException, GithubException
 import configparser
 import requests
 import win32cred # type: ignore
@@ -296,14 +296,10 @@ class TreeviewTooltip:
         self.repo_combo = repo_combo
         self.treeview = treeview
         self.tooltip_func = tooltip_func
-        self.treeview.bind("<Motion>", self.on_motion)
+        self.tip_window = None
+        self.treeview.bind("<Button-1>", self.on_motion)
         self.treeview.bind("<Leave>", self.on_leave)
-        self.treeview.bind
-        self.delay = 1000
-        self.tooltip_window = None  # Reference to the tooltip window
-        self.tooltip_label = None  # Reference to the label inside the tooltip
-        self.tooltip_timer = None  # Timer to show tooltip after delay
-        self.tooltip_shown = False  # Flag to check if tooltip is displayed
+
     def on_motion(self, event):
         item = self.treeview.identify_row(event.y)
         if not item:
@@ -311,31 +307,31 @@ class TreeviewTooltip:
             return
 
         if self.treeview.tag_has('has_tooltip', item):
-            if not self.tooltip_window:
-                self.schedule_tooltip(event, item)
+            if not self.tip_window:
+                self.show_tooltip(item, event.x, event.y)
         else:
             self.hide_tooltip()
-                
-    def schedule_tooltip(self, event, item):
-        if self.tooltip_timer:
-            self.treeview.after_cancel(self.tooltip_timer)
-        self.tooltip_timer = self.treeview.after(self.delay, self.show_tooltip , item, event.x, event.y)
 
     def show_tooltip(self, item, x, y):
-        if self.tooltip_window is None:
+        try:
             text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
-            if text:
-                self.tooltip_window = tw = tk.Toplevel(self.treeview)
-                tw.wm_overrideredirect(True)
-                tw.wm_geometry(f"+{x+20+self.treeview.winfo_rootx()}+{y+10+self.treeview.winfo_rooty()}")
-                label = tk.Label(tw, text=text, justify=tk.LEFT, background="#ffffe0", relief=tk.SOLID, borderwidth=1, font=font.Font(family="Consolas", size=8))
-                label.pack(ipadx=1)
-        self.tooltip_shown = True
-        
+        except GithubException as e:
+                if e.status == 404:
+                    text = None
+                    print("Error: Repository not found!")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+        if text:
+            self.tip_window = tw = tk.Toplevel(self.treeview)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x+20+self.treeview.winfo_rootx()}+{y+10+self.treeview.winfo_rooty()}")
+            label = tk.Label(tw, text=text, justify=tk.LEFT, background="#ffffe0", relief=tk.SOLID, borderwidth=1, font=font.Font(family="Consolas", size=8))
+            label.pack(ipadx=1)
+
     def hide_tooltip(self):
-        if self.tooltip_window:
-            self.tooltip_window.destroy()
-            self.tooltip_window = None
+        if self.tip_window:
+            self.tip_window.destroy()
+            self.tip_window = None
 
     def on_leave(self, event):
         self.hide_tooltip()
