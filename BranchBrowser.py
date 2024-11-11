@@ -13,7 +13,7 @@ from github import Github, UnknownObjectException
 import configparser
 import requests
 import win32cred
-
+import time 
 token = ''
 GIT_HOSTNAME = 'github.com'
 
@@ -59,7 +59,6 @@ class GitHubClient:
         repo = self.github.get_organization(org_name).get_repo(repo_name)
         structure = {}
         for branch in repo.get_branches():
-            print(f"branch: {branch}")
             parts = branch.name.split('/')
             node = structure
             for part in parts:
@@ -448,13 +447,10 @@ class App:
     def populate_tree(self, tree, node, parent=''):
         if type(node) == dict:
             for k,v in node.items():
-                print(f"k:{k} v:{v}")
                 if len(v) != 0: # Non leaf node
                     new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
                 else:
-                    
                     new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
-                    # new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
                 self.populate_tree(tree, v, new_node)
         elif type(node) == list:
             for v in node:
@@ -478,13 +474,7 @@ class App:
         self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
 
         self.populate_tree(self.branches_tree, branches_structure)
-        
-    def refresh(self):
-        self.update_tree(None)
-        self.update_repos(None)
-        self.orgs = self.github_client.get_organizations_names()
-        self.org_combo['values'] = self.orgs
-        
+
     def on_right_click(self, event):
         self.menu.delete(0, 'end')  # Clear the menu
 
@@ -534,6 +524,15 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+            
+    def refresh(self):
+        start_time = time.time()  # Get start time
+        self.update_tree(None)
+
+        end_time = time.time()  # Get end time
+    
+        elapsed_time_sec = end_time - start_time  # Time in seconds
+        print(f"Refreshed in: {elapsed_time_sec:.4f} seconds")
         
     def manage_submodules(self):
         org_name = self.org_combo.get()
