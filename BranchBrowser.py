@@ -2,16 +2,18 @@ import base64
 import datetime
 from io import StringIO
 import json
+import os
 import re
 import sys
 import threading
 import tkinter as tk
-from tkinter import font
+from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, UnknownObjectException
 import configparser
 import requests
+import win32cred
 
 token = ''
 GIT_HOSTNAME = 'github.com'
@@ -353,25 +355,46 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 
 class App:
-    def __init__(self, root, github_client):
+     # Initialize the application with GitHub client, organization, and repository details
+    def __init__(self, root, github_client, org, repo):
         self.root = root
         self.github_client = github_client
+        self.default_org = org
+        self.default_repo = repo
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
+        self.username = self.github_client.get_username()
         print(f'Connected to GitHub with user: {self.username}.')
+        print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
+        self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
+        self.github_token_menu = tk.Menu(self.menu_bar,tearoff=False)
+        self.github_token_menu.add_command(label="Update GitHub token", command=self.update_github_token)
+        self.menu_bar.add_cascade(label="GitHub token", menu=self.github_token_menu)
         self.menu_bar.add_command(label="Refresh", command=self.refresh)
         
         self.root.config(menu=self.menu_bar)
         
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
-        self.branches_tree = ttk.Treeview(self.frame, selectmode="none")
+
+        self.vertical_scrollbar = Scrollbar(self.frame, orient=tk.VERTICAL)
+        self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
+        
+        self.horizontal_scrollbar = Scrollbar(self.frame, orient=tk.HORIZONTAL)
+        self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
+        
+        self.branches_tree = ttk.Treeview(self.frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
         self.branches_tree.pack(fill='both', expand=True)
         self.branches_tree.column("#0", width=300)
+
+        self.vertical_scrollbar.config(command=self.branches_tree.yview)
+        self.horizontal_scrollbar.config(command=self.branches_tree.xview)
+        
+        self.menu = tk.Menu(self.root, tearoff=0)
 
         self.username = self.github_client.get_username()
         self.username_label = tk.Label(self.root, text=f"Logged in as: {self.username}")
@@ -397,10 +420,14 @@ class App:
         self.log_label = tk.Label(self.root, text="Log:")
         self.log_label.pack(side='top', fill='x')
         text = tk.Text(self.root, state='disabled')  # Create a Text widget
+        
+        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=text.yview)
+        self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
+        
         text.pack(side='top', fill='both', expand=True)
+        text.config(yscrollcommand=self.vertical_log_scrollbar.set)
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(text)
-
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
@@ -419,44 +446,52 @@ class App:
         self.branches_tree.bind('<Button-3>', self.on_right_click)
         self.org_combo.bind('<<ComboboxSelected>>', self.update_repos)
         self.repo_combo.bind('<<ComboboxSelected>>', self.update_tree)
-        if self.orgs:
-            self.org_combo.current(0)
+        if self.default_org in self.orgs:
+            org_index = self.orgs.index(self.default_org)
+            self.org_combo.current(org_index)
             self.update_repos(None)
-            self.update_tree(None)
 
-    def populate_tree(self, tree, node, parent=''):
-        if type(node) == dict:
-            for k,v in node.items():
-                if len(v) != 0: # Non leaf node
-                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
-                else:
-                    
-                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
-                    # new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
-                self.populate_tree(tree, v, new_node)
-        elif type(node) == list:
-            for v in node:
-                tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
-
-    def update_repos(self, event):
-        org_name = self.org_combo.get()
-        repos = self.github_client.get_organization_repos_names(org_name)
-        self.repo_combo['values'] = repos
-        if repos:
-            self.repo_combo.current(0)
-            self.update_tree(None)
-
-    def update_tree(self, event):
+    # Refresh branches tree view with the latest branch structure for selected organization and repository
+    def refresh_branches_by_config(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
- 
         branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
 
         self.branches_tree.delete(*self.branches_tree.get_children())
         self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
-
         self.populate_tree(self.branches_tree, branches_structure)
+
+    # Recursively populate branches tree with nested branch structure
+    def populate_tree(self, tree, node, parent=''):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if len(v) != 0:
+                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
+                else:
+                    
+                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
+                self.populate_tree(tree, v, new_node)
+        elif isinstance(node, list):
+            for v in node:
+                tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
+                
+    # Update repository combo box based on selected organization and set default if available
+    def update_repos(self, event):
+        org_name = self.org_combo.get()
+        repos = self.github_client.get_organization_repos_names(org_name)
+        self.repo_combo['values'] = repos
+        if self.default_repo in repos:
+            repo_index = repos.index(self.default_repo)
+            self.repo_combo.current(repo_index)
+        elif repos:
+            self.repo_combo.current(0)
         
+        self.update_tree(None)
+
+    # Refresh tree view with branches from the selected repository
+    def update_tree(self, event):
+        self.refresh_branches_by_config()
+                
     def refresh(self):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
@@ -511,6 +546,15 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+    def update_github_token(self):
+        token_dialog = TokenDialog(self.root)
+        updated_token = token_dialog.result
+        try:
+            test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) # Checking if the entered GitHub token is valid
+            save_credentials("BranchBrowser", "github_token", updated_token)
+        except Exception as e:
+            print("Wrong credentials. Entered token is not valid.")
+
         
     def manage_submodules(self):
         org_name = self.org_combo.get()
@@ -1138,38 +1182,120 @@ class TextHandler(object):
 
     def flush(self):
         pass
+# Load configuration settings from 'config.json', or use defaults if file is missing or invalid
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    if not os.path.exists(config_path):
+        print(f"Config file {config_path} not found. Using default values.")
+        return None
+    
+    try:
+        with open(config_path, "r") as config_file:
+            config = json.load(config_file)
+            return config
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON from config file {config_path}. Using default values.")
+        return None
+#Returns the default value if available, otherwise selects the first available option with a message.   
+def select_default_or_first(default_value, available_values, entity_name):
+    if default_value in available_values:
+        return default_value
+    else:
+        print(f"Default {entity_name} '{default_value}' not found. Using the first available {entity_name}.")
+        return available_values[0] 
 
+def save_credentials(credential_name, username, password):
+    credential = {
+        'Type': win32cred.CRED_TYPE_GENERIC,
+        'TargetName': credential_name,
+        'UserName': username,
+        'CredentialBlob': password,
+        'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE
+    }
+    win32cred.CredWrite(credential)
+    print(f"Credentials for '{credential_name}' saved successfully.")
+
+def get_credentials(credential_name):
+    try:
+        credential = win32cred.CredRead(credential_name, win32cred.CRED_TYPE_GENERIC)
+        username = credential['UserName']
+        password = credential['CredentialBlob'].decode('utf-16')
+        return username, password
+    except Exception as e:
+        return None, None
 
 def main():
-    root = tk.Tk(screenName ='BranchBrowser')
+    global token
+    root = tk.Tk(screenName='BranchBrowser')
     root.title("BranchBrowser")
     root.geometry('1200x800')  # Set the size of the window
     root.withdraw()
     
-    # Show a dialog asking for the GitHub token
-    token_dialog = TokenDialog(root)
+    tokenEnteredViaTokenDialog = False
+    username, password = get_credentials("BranchBrowser")
+   
+    while(True):
+        if not (username and password):
+            token_dialog = TokenDialog(root)
+            token = token_dialog.result
+            if token == None:
+                return
+            tokenEnteredViaTokenDialog = True
+        elif username and password:
+            token = password
 
-    global token
-    token  = token_dialog.result
+        try:
+            github_client = GitHubClient(GIT_HOSTNAME, token)
+            if tokenEnteredViaTokenDialog:
+                save_credentials("BranchBrowser", "github_token", token)
+            break
+        except Exception as e:
+            print("Wrong credentials. Entered token is not valid.")
+    # Show a dialog asking for the GitHub token if not already set
+    if not token:
+        token_dialog = TokenDialog(root)
+        token = token_dialog.result
+        if not token:
+            print("No token provided. Exiting...")
+            return
 
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
-
-    if not token:
-        print("No token provided. Exiting...")
-        return
-  
+    
     try:
-        github_client = GitHubClient(GIT_HOSTNAME, token)
+        config = load_config()
+        git_hostname = config.get("GIT_HOSTNAME", "github.com")
+        # Initialize GitHub client with provided token and hostname
+        github_client = GitHubClient(git_hostname, token)
+       
+        # Load configuration and get default organization/repository
+        default_org = config.get("default_organization") if config else None
+        default_repo = config.get("default_repository") if config else None
+
+        # Get list of available organizations
+        available_organizations = github_client.get_organizations_names()
+        app_org = select_default_or_first(default_org, available_organizations, "organization")
+
+        # Get list of repositories for the selected organization
+        available_repositories = github_client.get_organization_repos_names(app_org)
+        app_repo = select_default_or_first(default_repo, available_repositories, "repository")
+
+        app = App(root, github_client, app_org, app_repo)  
+
+        # Populate combo boxes with available organizations and repositories
+        app.org_combo['values'] = available_organizations
+        app.repo_combo['values'] = available_repositories
+
+        # Set selected organization and repository in the UI
+        app.org_combo.set(app_org)
+        app.repo_combo.set(app_repo)
+        
     except Exception as e:
         print(f"{str(e)}. Exiting...")
         return
 
-    app = App(root, github_client)
-
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()
