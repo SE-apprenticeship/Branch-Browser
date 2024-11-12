@@ -495,12 +495,9 @@ class App:
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
-        label.after(0, lambda: label.pack_forget())  # Hide the "Please Wait" label
         
-        # Simulate the result of the fetched data
+        label.after(0, lambda: label.pack_forget())
         data = "Data fetched successfully!"
-        
-        # Show the result in a message box
         label.after(0, lambda: tk.messagebox.showinfo("Success", data))
          
     def refresh(self):
