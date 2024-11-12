@@ -475,12 +475,15 @@ class App:
     def populate_tree(self, tree, node, parent=''):
         if isinstance(node, dict):
             for k, v in node.items():
-                new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
+                if len(v) != 0:
+                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
+                else:
+                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
                 self.populate_tree(tree, v, new_node)
         elif isinstance(node, list):
             for v in node:
                 tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
-
+                
     # Update repository combo box based on selected organization and set default if available
     def update_repos(self, event):
         org_name = self.org_combo.get()
