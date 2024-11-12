@@ -468,7 +468,6 @@ class App:
                 if len(v) != 0:
                     new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
                 else:
-                    
                     new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
                 self.populate_tree(tree, v, new_node)
         elif isinstance(node, list):
@@ -491,12 +490,26 @@ class App:
     # Refresh tree view with branches from the selected repository
     def update_tree(self, event):
         self.refresh_branches_by_config()
-                
-    def refresh(self):
+    
+    def fetch_data(self, label, event):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
+        label.after(0, lambda: label.pack_forget())  # Hide the "Please Wait" label
         
+        # Simulate the result of the fetched data
+        data = "Data fetched successfully!"
+        
+        # Show the result in a message box
+        label.after(0, lambda: tk.messagebox.showinfo("Success", data))
+         
+    def refresh(self):
+        wait_label = tk.Label(self.root, text="Please Wait...", font=("Arial", 14))
+        wait_label.pack(padx=20, pady=20)
+        
+        thread = threading.Thread(target=self.fetch_data, args=(wait_label, None))
+        thread.start()
+                
     def on_right_click(self, event):
         self.menu.delete(0, 'end')  # Clear the menu
 
