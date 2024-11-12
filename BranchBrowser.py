@@ -368,7 +368,10 @@ class App:
         self.refresh_menu.add_command(label="Refresh organizations", command=self.refresh_orgs)
         self.refresh_menu.add_command(label="Refresh repos", command=self.refresh_repos) 
         self.refresh_menu.add_command(label="Refresh branches", command=self.refresh_branches)
+        self.github_token_menu = tk.Menu(self.menu_bar,tearoff=False)
+        self.github_token_menu.add_command(label="Update GitHub token", command=self.update_github_token)
         self.menu_bar.add_cascade(label="Refresh", menu=self.refresh_menu)
+        self.menu_bar.add_cascade(label="GitHub token", menu=self.github_token_menu)
         
         self.root.config(menu=self.menu_bar)
         
@@ -535,6 +538,17 @@ class App:
     def refresh_orgs(self):
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
+
+
+    def update_github_token(self):
+        token_dialog = TokenDialog(self.root)
+        updated_token = token_dialog.result
+        try:
+            test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) # Checking if the entered GitHub token is valid
+            save_credentials("BranchBrowser", "github_token", updated_token)
+        except Exception as e:
+            print("Wrong credentials. Entered token is not valid.")
+
         
     def manage_submodules(self):
         org_name = self.org_combo.get()
