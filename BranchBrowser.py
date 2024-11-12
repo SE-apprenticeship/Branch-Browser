@@ -2,6 +2,7 @@ import base64
 import datetime
 from io import StringIO
 import json
+import os
 import re
 import sys
 import threading
@@ -354,13 +355,18 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 
 class App:
-    def __init__(self, root, github_client):
+     # Initialize the application with GitHub client, organization, and repository details
+    def __init__(self, root, github_client, org, repo):
         self.root = root
         self.github_client = github_client
+        self.default_org = org
+        self.default_repo = repo
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
+        self.username = self.github_client.get_username()
         print(f'Connected to GitHub with user: {self.username}.')
+        print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
@@ -426,7 +432,6 @@ class App:
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(text)
 
-
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
         for child in self.branches_tree.get_children(item):
@@ -444,42 +449,48 @@ class App:
         self.branches_tree.bind('<Button-3>', self.on_right_click)
         self.org_combo.bind('<<ComboboxSelected>>', self.update_repos)
         self.repo_combo.bind('<<ComboboxSelected>>', self.update_tree)
-        if self.orgs:
-            self.org_combo.current(0)
+        if self.default_org in self.orgs:
+            org_index = self.orgs.index(self.default_org)
+            self.org_combo.current(org_index)
             self.update_repos(None)
-            self.update_tree(None)
 
-    def populate_tree(self, tree, node, parent=''):
-        if type(node) == dict:
-            for k,v in node.items():
-                if len(v) != 0: # Non leaf node
-                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
-                else:
-                    new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree", "has_tooltip",))
-                self.populate_tree(tree, v, new_node)
-        elif type(node) == list:
-            for v in node:
-                tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
-
-    def update_repos(self, event):
-        org_name = self.org_combo.get()
-        repos = self.github_client.get_organization_repos_names(org_name)
-        self.repo_combo['values'] = repos
-        if repos:
-            self.repo_combo.current(0)
-            self.update_tree(None)
-
-    def update_tree(self, event):
+    # Refresh branches tree view with the latest branch structure for selected organization and repository
+    def refresh_branches_by_config(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
- 
         branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
 
         self.branches_tree.delete(*self.branches_tree.get_children())
         self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
-
         self.populate_tree(self.branches_tree, branches_structure)
 
+    # Recursively populate branches tree with nested branch structure
+    def populate_tree(self, tree, node, parent=''):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
+                self.populate_tree(tree, v, new_node)
+        elif isinstance(node, list):
+            for v in node:
+                tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
+
+    # Update repository combo box based on selected organization and set default if available
+    def update_repos(self, event):
+        org_name = self.org_combo.get()
+        repos = self.github_client.get_organization_repos_names(org_name)
+        self.repo_combo['values'] = repos
+        if self.default_repo in repos:
+            repo_index = repos.index(self.default_repo)
+            self.repo_combo.current(repo_index)
+        elif repos:
+            self.repo_combo.current(0)
+        
+        self.update_tree(None)
+
+    # Refresh tree view with branches from the selected repository
+    def update_tree(self, event):
+        self.refresh_branches_by_config()
+        
     def on_right_click(self, event):
         self.menu.delete(0, 'end')  # Clear the menu
 
@@ -1176,7 +1187,27 @@ class TextHandler(object):
 
     def flush(self):
         pass
-
+# Load configuration settings from 'config.json', or use defaults if file is missing or invalid
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    if not os.path.exists(config_path):
+        print(f"Config file {config_path} not found. Using default values.")
+        return None
+    
+    try:
+        with open(config_path, "r") as config_file:
+            config = json.load(config_file)
+            return config
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON from config file {config_path}. Using default values.")
+        return None
+#Returns the default value if available, otherwise selects the first available option with a message.   
+def select_default_or_first(default_value, available_values, entity_name):
+    if default_value in available_values:
+        return default_value
+    else:
+        print(f"Default {entity_name} '{default_value}' not found. Using the first available {entity_name}.")
+        return available_values[0] 
 
 def save_credentials(credential_name, username, password):
     credential = {
@@ -1189,7 +1220,6 @@ def save_credentials(credential_name, username, password):
     win32cred.CredWrite(credential)
     print(f"Credentials for '{credential_name}' saved successfully.")
 
-
 def get_credentials(credential_name):
     try:
         credential = win32cred.CredRead(credential_name, win32cred.CRED_TYPE_GENERIC)
@@ -1199,14 +1229,13 @@ def get_credentials(credential_name):
     except Exception as e:
         return None, None
 
-
 def main():
-    root = tk.Tk(screenName ='BranchBrowser')
+    global token
+    root = tk.Tk(screenName='BranchBrowser')
     root.title("BranchBrowser")
     root.geometry('1200x800')  # Set the size of the window
     root.withdraw()
-
-    global token
+    
     tokenEnteredViaTokenDialog = False
     username, password = get_credentials("BranchBrowser")
    
@@ -1227,16 +1256,51 @@ def main():
             break
         except Exception as e:
             print("Wrong credentials. Entered token is not valid.")
-            
+    # Show a dialog asking for the GitHub token if not already set
+    if not token:
+        token_dialog = TokenDialog(root)
+        token = token_dialog.result
+        if not token:
+            print("No token provided. Exiting...")
+            return
 
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
+    
+    try:
+        config = load_config()
+        git_hostname = config.get("GIT_HOSTNAME", "github.com")
+        # Initialize GitHub client with provided token and hostname
+        github_client = GitHubClient(git_hostname, token)
+       
+        # Load configuration and get default organization/repository
+        default_org = config.get("default_organization") if config else None
+        default_repo = config.get("default_repository") if config else None
 
-    app = App(root, github_client)
+        # Get list of available organizations
+        available_organizations = github_client.get_organizations_names()
+        app_org = select_default_or_first(default_org, available_organizations, "organization")
+
+        # Get list of repositories for the selected organization
+        available_repositories = github_client.get_organization_repos_names(app_org)
+        app_repo = select_default_or_first(default_repo, available_repositories, "repository")
+
+        app = App(root, github_client, app_org, app_repo)  
+
+        # Populate combo boxes with available organizations and repositories
+        app.org_combo['values'] = available_organizations
+        app.repo_combo['values'] = available_repositories
+
+        # Set selected organization and repository in the UI
+        app.org_combo.set(app_org)
+        app.repo_combo.set(app_repo)
+        
+    except Exception as e:
+        print(f"{str(e)}. Exiting...")
+        return
 
     root.mainloop()
-
 
 if __name__ == "__main__":
     main()
