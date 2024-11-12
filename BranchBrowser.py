@@ -58,7 +58,6 @@ class GitHubClient:
         repo = self.github.get_organization(org_name).get_repo(repo_name)
         structure = {}
         for branch in repo.get_branches():
-            print(f"branch: {branch}")
             parts = branch.name.split('/')
             node = structure
             for part in parts:
@@ -364,9 +363,7 @@ class App:
 
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
-        self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
-        self.refresh_menu.add_command(label="Refresh", command=self.refresh)
-        self.menu_bar.add_cascade(label="Options", menu=self.refresh_menu)
+        self.menu_bar.add_command(label="Refresh", command=self.refresh)
         
         self.root.config(menu=self.menu_bar)
         
@@ -430,7 +427,6 @@ class App:
     def populate_tree(self, tree, node, parent=''):
         if type(node) == dict:
             for k,v in node.items():
-                print(f"k:{k} v:{v}")
                 if len(v) != 0: # Non leaf node
                     new_node = tree.insert(parent, 'end', text=k, tags=("branch_tree",))
                 else:
@@ -462,7 +458,6 @@ class App:
         self.populate_tree(self.branches_tree, branches_structure)
         
     def refresh(self):
-        self.update_tree(None)
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
