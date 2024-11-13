@@ -371,13 +371,10 @@ class App:
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
         self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
-        self.refresh_menu.add_command(label="Refresh organizations", command=self.refresh_orgs)
-        self.refresh_menu.add_command(label="Refresh repos", command=self.refresh_repos) 
-        self.refresh_menu.add_command(label="Refresh branches", command=self.refresh_branches)
         self.github_token_menu = tk.Menu(self.menu_bar,tearoff=False)
         self.github_token_menu.add_command(label="Update GitHub token", command=self.update_github_token)
-        self.menu_bar.add_cascade(label="Refresh", menu=self.refresh_menu)
         self.menu_bar.add_cascade(label="GitHub token", menu=self.github_token_menu)
+        self.menu_bar.add_command(label="Refresh", command=self.refresh)
         
         self.root.config(menu=self.menu_bar)
         
@@ -493,7 +490,23 @@ class App:
     # Refresh tree view with branches from the selected repository
     def update_tree(self, event):
         self.refresh_branches_by_config()
+    
+    def fetch_data(self, label, event):
+        self.update_repos(None)
+        self.orgs = self.github_client.get_organizations_names()
+        self.org_combo['values'] = self.orgs
         
+        label.after(0, lambda: label.pack_forget())
+        data = "Data fetched successfully!"
+        label.after(0, lambda: tk.messagebox.showinfo("Success", data))
+         
+    def refresh(self):
+        wait_label = tk.Label(self.root, text="Please Wait...", font=("Arial", 14))
+        wait_label.pack(padx=20, pady=20)
+        
+        thread = threading.Thread(target=self.fetch_data, args=(wait_label, None))
+        thread.start()
+                
     def on_right_click(self, event):
         self.menu.delete(0, 'end')  # Clear the menu
 
@@ -543,17 +556,6 @@ class App:
             self.update_tree(None) # Update tree to reflect changes
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
-    def refresh_branches(self):
-        self.update_tree(None)
-        
-    def refresh_repos(self):
-        self.update_repos(None)
-        
-    def refresh_orgs(self):
-        self.orgs = self.github_client.get_organizations_names()
-        self.org_combo['values'] = self.orgs
-
-
     def update_github_token(self):
         token_dialog = TokenDialog(self.root)
         updated_token = token_dialog.result
