@@ -298,7 +298,7 @@ class TreeviewTooltip:
         self.treeview = treeview
         self.tooltip_func = tooltip_func
         self.tip_window = None
-        self.treeview.bind("<Motion>", self.on_motion)
+        self.treeview.bind("<Button-1>", self.on_left_click)
         self.treeview.bind("<Leave>", self.on_leave)
 
     def on_left_click(self, event):
