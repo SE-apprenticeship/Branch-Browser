@@ -10,11 +10,11 @@ import tkinter as tk
 from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
-from github import Github, UnknownObjectException
+from github import Github, UnknownObjectException, GithubException
 import configparser
 import requests
-import win32cred
-
+import win32cred # type: ignore
+import threading 
 token = ''
 GIT_HOSTNAME = 'github.com'
 
@@ -298,10 +298,10 @@ class TreeviewTooltip:
         self.treeview = treeview
         self.tooltip_func = tooltip_func
         self.tip_window = None
-        self.treeview.bind("<Motion>", self.on_motion)
+        self.treeview.bind("<Button-1>", self.on_left_click)
         self.treeview.bind("<Leave>", self.on_leave)
 
-    def on_motion(self, event):
+    def on_left_click(self, event):
         item = self.treeview.identify_row(event.y)
         if not item:
             self.hide_tooltip()
@@ -314,7 +314,14 @@ class TreeviewTooltip:
             self.hide_tooltip()
 
     def show_tooltip(self, item, x, y):
-        text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
+        try:
+            text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
+        except GithubException as e:
+                if e.status == 404:
+                    text = None
+                    print("Error: Repository not found!")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
         if text:
             self.tip_window = tw = tk.Toplevel(self.treeview)
             tw.wm_overrideredirect(True)
@@ -512,7 +519,7 @@ class App:
 
         item = self.branches_tree.identify('item', event.x, event.y)
 
-        if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children)
+        if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children) 
             self.menu.add_command(label="Create Branch", command=self.create_branch)
             self.menu.add_command(label="Delete Branch", command=self.delete_branch)
             self.menu.add_command(label="Manage Submodules", command=self.manage_submodules)
