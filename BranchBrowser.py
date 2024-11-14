@@ -498,20 +498,15 @@ class App:
     def update_tree(self, event):
         self.refresh_branches_by_config()
     
-    def fetch_data(self, label, event):
+    def fetch_data(self):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
-        
-        label.after(0, lambda: label.pack_forget())
-        data = "Data fetched successfully!"
-        label.after(0, lambda: tk.messagebox.showinfo("Success", data))
          
     def refresh(self):
-        wait_label = tk.Label(self.root, text="Please Wait...", font=("Arial", 14))
-        wait_label.pack(padx=20, pady=20)
-        
-        thread = threading.Thread(target=self.fetch_data, args=(wait_label, None))
+        self.branches_tree.delete(*self.branches_tree.get_children())
+        self.branches_tree.heading("#0", text="Please wait. Refreshing data...")
+        thread = threading.Thread(target=self.fetch_data)
         thread.start()
                 
     def on_right_click(self, event):
