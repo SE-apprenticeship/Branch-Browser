@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
-from github import Github, UnknownObjectException, GithubException
+from github import BadAttributeException, BadCredentialsException, Github, RateLimitExceededException, UnknownObjectException, GithubException
 import configparser
 import requests
 import win32cred # type: ignore
@@ -39,17 +39,24 @@ class GitHubClient:
     def get_organization_repo_branch_gitmodules_content(self, org_name, repo_name, branch_name):
         try:
             file_content = self.github.get_organization(org_name).get_repo(repo_name).get_contents('.gitmodules', ref=branch_name)
-            return file_content.decoded_content.decode()
-        except UnknownObjectException:
+            return file_content.decoded_content.decode('utf-8')
+        except GithubException as e:
             return ''
 
     def get_organization_repo_branch_commit_sha(self, org_name, repo_name, branch_name):
-        return self.github.get_organization(org_name).get_repo(repo_name).get_branch(branch_name).commit.sha
-
+        try:
+            return self.github.get_organization(org_name).get_repo(repo_name).get_branch(branch_name).commit.sha
+        except Exception as e:
+            handle_exception(e)
+            return
+        
     def organization_repo_create_branch(self, org_name, repo_name, new_branch_name, source_commit_sha):
         # refs/heads/new-branch is used to create a new branch
-        self.github.get_organization(org_name).get_repo(repo_name).create_git_ref(ref=f"refs/heads/{new_branch_name}", sha=source_commit_sha)
-
+        try:
+            self.github.get_organization(org_name).get_repo(repo_name).create_git_ref(ref=f"refs/heads/{new_branch_name}", sha=source_commit_sha)
+        except Exception as e: 
+            handle_exception(e)
+            
     def organization_repo_delete_branch(self, org_name, repo_name, branch_name):
         # Fetch the branch reference
         ref = self.github.get_organization(org_name).get_repo(repo_name).get_git_ref(f"heads/{branch_name}")
@@ -314,14 +321,11 @@ class TreeviewTooltip:
             self.hide_tooltip()
 
     def show_tooltip(self, item, x, y):
+        text = None
         try:
             text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
-        except GithubException as e:
-                if e.status == 404:
-                    text = None
-                    print("Error: Repository not found!")
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            handle_exception(e)
         if text:
             self.tip_window = tw = tk.Toplevel(self.treeview)
             tw.wm_overrideredirect(True)
@@ -426,15 +430,20 @@ class App:
 
         self.log_label = tk.Label(self.root, text="Log:")
         self.log_label.pack(side='top', fill='x')
-        text = tk.Text(self.root, state='disabled')  # Create a Text widget
+        log_text = tk.Text(self.root, state='disabled')  # Create a Text widget
         
-        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=text.yview)
+        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=log_text.yview)
         self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
         
-        text.pack(side='top', fill='both', expand=True)
-        text.config(yscrollcommand=self.vertical_log_scrollbar.set)
+        log_text.pack(side='top', fill='both', expand=True)
+        log_text.config(yscrollcommand=self.vertical_log_scrollbar.set)
+        
+        #Colorized text configuration
+        log_text.tag_configure("red",foreground="red")
+        log_text.tag_configure("blue",foreground="blue")
+        
         # Redirect stdout to the Text widget
-        sys.stdout = TextHandler(text)
+        sys.stdout = TextHandler(log_text)
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
@@ -463,10 +472,13 @@ class App:
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
-
-        self.branches_tree.delete(*self.branches_tree.get_children())
+        
+        self.clear_branches_tree()
         self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
         self.populate_tree(self.branches_tree, branches_structure)
+
+    def clear_branches_tree(self):
+        self.branches_tree.delete(*self.branches_tree.get_children())
 
     # Recursively populate branches tree with nested branch structure
     def populate_tree(self, tree, node, parent=''):
@@ -498,20 +510,15 @@ class App:
     def update_tree(self, event):
         self.refresh_branches_by_config()
     
-    def fetch_data(self, label, event):
+    def fetch_data(self):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
-        
-        label.after(0, lambda: label.pack_forget())
-        data = "Data fetched successfully!"
-        label.after(0, lambda: tk.messagebox.showinfo("Success", data))
          
     def refresh(self):
-        wait_label = tk.Label(self.root, text="Please Wait...", font=("Arial", 14))
-        wait_label.pack(padx=20, pady=20)
-        
-        thread = threading.Thread(target=self.fetch_data, args=(wait_label, None))
+        self.clear_branches_tree()
+        self.branches_tree.heading("#0", text="Please wait. Refreshing data...")
+        thread = threading.Thread(target=self.fetch_data)
         thread.start()
                 
     def on_right_click(self, event):
@@ -570,7 +577,7 @@ class App:
             test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) # Checking if the entered GitHub token is valid
             save_credentials("BranchBrowser", "github_token", updated_token)
         except Exception as e:
-            print("Wrong credentials. Entered token is not valid.")
+            handle_exception(e)
 
         
     def manage_submodules(self):
@@ -890,7 +897,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
             self.update_tree(None) # Update tree to reflect changes
 
         except Exception as e:
-            print(e)
+            handle_exception(e)
         finally:
             # Close the processing popup
             self.processing_popup.destroy()
@@ -987,7 +994,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
             self.update_tree(None) # Update tree to reflect changes
 
         except Exception as e:
-            print(e)
+            handle_exception(e)
         finally:
             # Close the processing popup
             self.processing_popup.destroy()    
@@ -1102,7 +1109,7 @@ class CreateReleaseBranchDialog(simpledialog.Dialog):
             self.update_tree(None) # Update tree to reflect changes
 
         except Exception as e:
-            print(e)
+            handle_exception(e)
         finally:
             # Close the processing popup
             self.processing_popup.destroy()         
@@ -1185,12 +1192,16 @@ class TextHandler(object):
 
     def write(self, s):
         self.widget.config(state='normal')  # Enable the Text widget
-
         if s != '\n':
              # Get current date and time
             now = datetime.datetime.now()
             timestamp = now.strftime("%d/%m/%Y %H:%M:%S.%f")[:-3]  # Format date and time
-            self.widget.insert(tk.END, timestamp + " " + s)
+            if s.startswith("ERROR"):
+                self.widget.insert(tk.END, timestamp + " " + s, "red")
+            elif s.startswith("INFO"):
+                self.widget.insert(tk.END, timestamp + " " + s, "blue")
+            else:
+                self.widget.insert(tk.END, timestamp + " " + s)
         else:
             self.widget.insert(tk.END, s)
 
@@ -1239,7 +1250,29 @@ def get_credentials(credential_name):
         password = credential['CredentialBlob'].decode('utf-16')
         return username, password
     except Exception as e:
-        return None, None
+        handle_exception(e)
+        return None,None
+    
+def handle_exception(e):
+    error_message = "Something went wrong. Try restarting application."
+    if isinstance(e, GithubException):
+        error_message = github_exceptions(e)
+    elif isinstance(e, BadAttributeException):
+        error_message = f"ERROR Bad Attribute Error: Attribute not found - {e}"
+    else:
+        error_message = f"ERROR - Unknown error occured: {e}"
+    print(error_message)
+    
+def github_exceptions(e):
+    text = f"{e.data.get('message')} (Status Code: {e.status})"
+    exception_map = {
+        GithubException: lambda e: f"ERROR Github Error: {text}",
+        BadCredentialsException: lambda e: f"ERROR Token Error: {text}",
+        RateLimitExceededException: lambda e: f"INFO Rate Limit Exceeded Error: {text}",
+        UnknownObjectException: lambda e: f"ERROR Unknown Object Error: {text}"
+    }
+    error_message = exception_map.get(type(e), lambda e: f"ERROR {str(e)}")(e)
+    return error_message
 
 def main():
     global token
@@ -1267,7 +1300,7 @@ def main():
                 save_credentials("BranchBrowser", "github_token", token)
             break
         except Exception as e:
-            print("Wrong credentials. Entered token is not valid.")
+            handle_exception(e)
     # Show a dialog asking for the GitHub token if not already set
     if not token:
         token_dialog = TokenDialog(root)
@@ -1284,14 +1317,17 @@ def main():
         config = load_config()
         git_hostname = config.get("GIT_HOSTNAME", "github.com")
         # Initialize GitHub client with provided token and hostname
-        github_client = GitHubClient(git_hostname, token)
-       
+        try:
+            github_client = GitHubClient(git_hostname, token)
+        except Exception as e:
+            handle_exception(e)
         # Load configuration and get default organization/repository
         default_org = config.get("default_organization") if config else None
         default_repo = config.get("default_repository") if config else None
 
         # Get list of available organizations
         available_organizations = github_client.get_organizations_names()
+        app_org = []
         app_org = select_default_or_first(default_org, available_organizations, "organization")
 
         # Get list of repositories for the selected organization
@@ -1309,8 +1345,7 @@ def main():
         app.repo_combo.set(app_repo)
         
     except Exception as e:
-        print(f"{str(e)}. Exiting...")
-        return
+        handle_exception(e)
 
     root.mainloop()
 
