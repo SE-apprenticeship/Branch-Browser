@@ -8,6 +8,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
+from tkinter import messagebox
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, UnknownObjectException, GithubException
@@ -363,7 +364,7 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 class App:
      # Initialize the application with GitHub client, organization, and repository details
-    def __init__(self, root, github_client, org, repo):
+    def __init__(self, root, github_client, org, repo, config_path):
         self.root = root
         self.github_client = github_client
         self.default_org = org
@@ -372,6 +373,7 @@ class App:
         self.setup_ui()
         self.setup_actions()
         self.username = self.github_client.get_username()
+        self.config_path = config_path
         print(f'Connected to GitHub with user: {self.username}.')
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
 
@@ -382,7 +384,8 @@ class App:
         self.github_token_menu.add_command(label="Update GitHub token", command=self.update_github_token)
         self.menu_bar.add_cascade(label="GitHub token", menu=self.github_token_menu)
         self.menu_bar.add_command(label="Refresh", command=self.refresh)
-        
+        self.menu_bar.add_command(label="Edit config", command=self.open_config_dialog)
+
         self.root.config(menu=self.menu_bar)
         
         self.frame = tk.Frame(self.root, width=400)
@@ -497,7 +500,121 @@ class App:
     # Refresh tree view with branches from the selected repository
     def update_tree(self, event):
         self.refresh_branches_by_config()
-    
+
+    # Opens a configuration dialog for selecting organization, repository, and hostname.
+    def open_config_dialog(self):
+        config_dialog = tk.Toplevel(self.root)
+        config_dialog.title("Edit Configuration")
+
+        dialog_width = 300
+        dialog_height = 300
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        position_top = int(screen_height / 2 - dialog_height / 2)
+        position_left = int(screen_width / 2 - dialog_width / 2)
+
+        config_dialog.geometry(f'{dialog_width}x{dialog_height}+{position_left}+{position_top}')
+
+        organizations = self.github_client.get_organizations_names()  
+        if not organizations:
+            messagebox.showwarning("No Organizations", "No organizations found.")
+            return
+
+        org_label = tk.Label(config_dialog, text="Select GitHub organization:")
+        org_label.pack(pady=5)
+
+        org_combobox = ttk.Combobox(config_dialog, values=organizations, width=30)
+        org_combobox.set(self.default_org)  
+        org_combobox.pack(pady=5)
+
+        def on_org_select(event):
+            selected_org = org_combobox.get()
+            repositories = self.github_client.get_organization_repos_names(selected_org)
+            if not repositories:
+                messagebox.showwarning("No Repositories", "No repositories found for the selected organization.")
+                return
+
+            repo_combobox['values'] = repositories
+            repo_combobox.set(self.default_repo) 
+
+        org_combobox.bind("<<ComboboxSelected>>", on_org_select)
+
+        repo_label = tk.Label(config_dialog, text="Select GitHub repository:")
+        repo_label.pack(pady=5)
+
+        repo_combobox = ttk.Combobox(config_dialog, values=[], width=30)
+        repo_combobox.set(self.default_repo)  
+        repo_combobox.pack(pady=5)
+
+        git_hostname_label = tk.Label(config_dialog, text="Enter GitHub hostname:")
+        git_hostname_label.pack(pady=5)
+
+        git_hostname_entry = tk.Entry(config_dialog, width=30)
+        git_hostname_entry.insert(0, 'github.com')  
+        git_hostname_entry.pack(pady=5)
+
+        def on_save():
+            new_org = org_combobox.get()
+            new_repo = repo_combobox.get()
+            new_git_hostname = git_hostname_entry.get()
+
+            if new_org and new_repo and new_git_hostname:
+                config = {
+                    'default_organization': new_org,
+                    'default_repository': new_repo,
+                    'GIT_HOSTNAME': new_git_hostname
+                }
+
+                self.save_config(config)
+                messagebox.showinfo("Success", "Configuration updated and saved.")
+                self.update_main_display(new_org, new_repo)
+                config_dialog.destroy()
+            else:
+                messagebox.showwarning("Input Error", "All fields must be provided.")
+
+        save_button = tk.Button(config_dialog, text="Save", command=on_save)
+        save_button.pack(pady=10)
+
+        cancel_button = tk.Button(config_dialog, text="Cancel", command=config_dialog.destroy)
+        cancel_button.pack(pady=5)
+
+    # Load configuration settings from 'config.json', or use defaults if file is missing or invalid
+    @staticmethod
+    def load_config():
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if not os.path.exists(config_path):
+            print(f"Config file {config_path} not found. Using default values.")
+            return None
+        
+        try:
+            with open(config_path, "r") as config_file:
+                config = json.load(config_file)
+                return config
+        except json.JSONDecodeError:
+            print(f"Error decoding JSON from config file {config_path}. Using default values.")
+            return None  
+          
+    # Saves the provided configuration data to a file     
+    def save_config(self, config):
+        try:
+            with open(self.config_path, "w") as config_file:
+                json.dump(config, config_file, indent=4)
+            print(f"Config saved to {self.config_path}")
+        except Exception as e:
+            print(f"Error saving config: {e}")
+            
+    # Updates the main display with new organization and repository settings        
+    def update_main_display(self, new_org, new_repo):
+        self.default_org = new_org
+        self.default_repo = new_repo
+
+        self.org_combo['values'] = self.github_client.get_organizations_names()
+        self.repo_combo['values'] = self.github_client.get_organization_repos_names(self.default_org)
+
+        self.org_combo.set(self.default_org)
+        self.repo_combo.set(self.default_repo)
+        print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
+            
     def fetch_data(self, label, event):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
@@ -1199,20 +1316,6 @@ class TextHandler(object):
 
     def flush(self):
         pass
-# Load configuration settings from 'config.json', or use defaults if file is missing or invalid
-def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    if not os.path.exists(config_path):
-        print(f"Config file {config_path} not found. Using default values.")
-        return None
-    
-    try:
-        with open(config_path, "r") as config_file:
-            config = json.load(config_file)
-            return config
-    except json.JSONDecodeError:
-        print(f"Error decoding JSON from config file {config_path}. Using default values.")
-        return None
 #Returns the default value if available, otherwise selects the first available option with a message.   
 def select_default_or_first(default_value, available_values, entity_name):
     if default_value in available_values:
@@ -1279,9 +1382,9 @@ def main():
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
-    
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
     try:
-        config = load_config()
+        config = App.load_config()
         git_hostname = config.get("GIT_HOSTNAME", "github.com")
         # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(git_hostname, token)
@@ -1298,7 +1401,7 @@ def main():
         available_repositories = github_client.get_organization_repos_names(app_org)
         app_repo = select_default_or_first(default_repo, available_repositories, "repository")
 
-        app = App(root, github_client, app_org, app_repo)  
+        app = App(root, github_client, app_org, app_repo, config_path)  
 
         # Populate combo boxes with available organizations and repositories
         app.org_combo['values'] = available_organizations
