@@ -67,7 +67,11 @@ class GitHubClient:
                     node[part] = {}
                 node = node[part]
         return structure
-
+    
+    #Retrieve the names of teams in the specified organization.
+    def get_organization_teams(self, org_name):
+        org = self.github.get_organization(org_name)
+        return [team.name for team in org.get_teams()]
 
 class GitHubRepoSubmoduleManager:
     def __init__(self, owner, repo_top, token):
@@ -905,32 +909,98 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.branch_name = branch_name
         self.update_tree = update_tree
 
+        self.include_push_or_not = tk.BooleanVar(value=True) 
+        # StringVar to hold the real-time preview of the path
+        self.path_preview = tk.StringVar()
         # Call the superclass's __init__ method
         super().__init__(parent)
 
     def body(self, master):
-        # Disable resizing of the dialog
         self.resizable(False, False)
         self.title(f'Create feature branch for {self.org_name}/{self.repo_name}/{self.branch_name}')
 
-        tk.Label(master, text="Enter replace search prefix (prefix that will be replaced by feature branch prefix):").grid(row=0, sticky='w')
+        tk.Label(master, text="Prefix that will be replaced by feature branch prefix:").grid(row=0, sticky='e')
         self.search_branch_prefix = tk.Entry(master, width=60)
-        self.search_branch_prefix.insert(0, self.branch_name)
+        self.search_branch_prefix.insert(0, "Release")
         self.search_branch_prefix.grid(row=0, column=1)
+        
+        # Read-only entry for "Features"
+        tk.Label(master, text="Feature branch prefix:").grid(row=1, sticky='e')
+        self.feature_branch_prefix = tk.Entry(master, width=60)
+        self.feature_branch_prefix.insert(0, "Features")
+        self.feature_branch_prefix.configure(state='readonly')  
+        self.feature_branch_prefix.grid(row=1, column=1, sticky='w')
 
-        tk.Label(master, text="Enter feature branch prefix (Features/TeamName[/Feature-BugName]):").grid(row=1, sticky='w')
-        self.replace_feature_branch_prefix = tk.Entry(master, width=60)
-        self.replace_feature_branch_prefix.insert(0, "Features/TeamName/Feature-Bug")
-        self.replace_feature_branch_prefix.grid(row=1, column=1)
+        # Dropdown for team names
+        tk.Label(master, text="Select team:").grid(row=3, column=0, sticky='e') 
+        self.team_dropdown = ttk.Combobox(master, values=[], width=20)
+        self.team_dropdown.grid(row=3, column=1, sticky='w')
+
+        # Populate the dropdown with team names from GitHub
+        self.populate_team_dropdown()
+
+        # Checkbox for optional "Push" option
+        tk.Label(master, text="Enable push option:").grid(row=4, column=0, sticky='e')
+        self.include_push_or_not = tk.BooleanVar(value=True)  # Default is checked
+        self.push_checkbox = tk.Checkbutton(master, variable=self.include_push_or_not)
+        self.push_checkbox.grid(row=4, column=1, sticky='w')
+
+        # Editable entry for "Feature-Bug"
+        tk.Label(master, text="Feature/Bug description:").grid(row=5, column=0, sticky='e')
+        self.feature_bug_entry = tk.Entry(master, width=20)
+        self.feature_bug_entry.insert(0, "Feature-Bug")  # Default text
+        self.feature_bug_entry.grid(row=5, column=1, sticky='w')
+
+        # Preview label to display the real-time generated path
+        tk.Label(master, text="Feature path preview:").grid(row=6, column=0, sticky='e')
+        self.replace_feature_branch_prefix = tk.Entry(master, textvariable=self.path_preview, fg="blue",width=60, state="readonly")
+        self.replace_feature_branch_prefix.grid(row=6, column=1, sticky='w')
+
+        # Set up listeners to update the preview when fields change
+        self.team_dropdown.bind("<<ComboboxSelected>>", lambda event: self.update_path_preview())
+        self.feature_bug_entry.bind("<KeyRelease>", lambda event: self.update_path_preview())
+        self.push_checkbox.config(command=self.update_path_preview)
+
+        # Initial preview setup
+        self.update_path_preview()
 
         # get submodules info - only 1st level
         self.submodules_info = get_submodules_info(self.github_client, self.org_name, self.repo_name, self.branch_name)
 
-        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=2, sticky='w')
+        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=7, sticky='w')
 
         submodules_hierarchy_string = f"R:{self.repo_name} B:{self.branch_name}\n" + build_hierarchy(self.submodules_info, format_output, get_sublist)
 
-        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=3, sticky='w')
+        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=8, sticky='w')
+   
+    # Use the GitHubClient to get team names for the organization
+    def populate_team_dropdown(self):
+        try:
+            team_names = self.github_client.get_organization_teams(self.org_name)
+            self.team_dropdown['values'] = team_names
+            if team_names:
+                self.team_dropdown.set(team_names[0]) 
+        except Exception as e:
+            print(f"Error fetching team names: {e}")
+
+    # Updates the path preview based on the selected feature prefix, team name, and feature bug, including the "Push" option if selected.
+    def update_path_preview(self):
+        feature_prefix = self.feature_branch_prefix.get()
+        team_name = self.team_dropdown.get()
+        feature_bug = self.feature_bug_entry.get()
+
+        if self.include_push_or_not.get():
+            push_selected = "Push"
+        else:
+            push_selected = ""  # If "Push" is not selected, remove it entirely from the path
+
+        # Build the path preview with or without "Push" between team_name and feature_bug
+        if push_selected:
+            full_path = f"{feature_prefix}/{team_name}/{push_selected}/{feature_bug}"
+        else:
+            full_path = f"{feature_prefix}/{team_name}/{feature_bug}"
+
+        self.path_preview.set(full_path)
 
     def cancel(self, event=None):
         print(f"Create feature branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
@@ -954,7 +1024,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
             # Perform your action here
             print("Creating feature branch structure...")
 
-            # Creeate feature branch for submodule
+            # Create feature branch for submodule
             new_branch_name = self.branch_name.replace(self.search_branch_prefix_val, self.replace_feature_branch_prefix_val)
 
             # Validate if prefix replace will actually change branch name
