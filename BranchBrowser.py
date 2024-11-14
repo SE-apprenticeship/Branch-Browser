@@ -560,7 +560,7 @@ class App:
         # Check the result
         if result:
             print(f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
-            self.update_tree(None) # Update tree to reflect changes
+            self.branches_tree.delete(selected_item)
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
     def update_github_token(self):
