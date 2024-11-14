@@ -600,12 +600,17 @@ class App:
     
 
 class TokenDialog(simpledialog.Dialog):
+    def __init__(self, parent, message = None):
+        self.message = message
+        super().__init__(parent, "GitHub Token")
+
     def body(self, master):
         self.resizable(False, False)
-        self.title("GitHub Token")
-        tk.Label(master, text="Enter your GitHub token:").grid(row=0)
+        if self.message:
+            tk.Label(master, text=self.message).grid(row=0, columnspan=2, sticky="w")
+        tk.Label(master, text="Enter your GitHub token:").grid(row=1)
         self.token = tk.Entry(master, show='*', width=40)
-        self.token.grid(row=0, column=1)
+        self.token.grid(row=1, column=1)
         return self.token # initial focus
 
     def apply(self):
@@ -1248,34 +1253,32 @@ def main():
     root.geometry('1200x800')  # Set the size of the window
     root.withdraw()
     
-    tokenEnteredViaTokenDialog = False
+    token_entered_via_token_dialog = False
+    token_dialog_message = None
+    token_expired = False
     username, password = get_credentials("BranchBrowser")
-   
     while(True):
-        if not (username and password):
-            token_dialog = TokenDialog(root)
+        if not (username and password) or (username and password and token_expired): # If there are no credentials saved (first use or the app) or the token exists but is expired
+            token_dialog = TokenDialog(root, token_dialog_message) # Shows the dialog with a message
             token = token_dialog.result
-            if token == None:
+            if token == None: # If the user clicks "Cancel" or just closes the window
                 return
-            tokenEnteredViaTokenDialog = True
+            token_entered_via_token_dialog = True
         elif username and password:
             token = password
 
         try:
             github_client = GitHubClient(GIT_HOSTNAME, token)
-            if tokenEnteredViaTokenDialog:
+            if token_entered_via_token_dialog:
                 save_credentials("BranchBrowser", "github_token", token)
             break
         except Exception as e:
-            print("Wrong credentials. Entered token is not valid.")
-    # Show a dialog asking for the GitHub token if not already set
-    if not token:
-        token_dialog = TokenDialog(root)
-        token = token_dialog.result
-        if not token:
-            print("No token provided. Exiting...")
-            return
-
+            if username and password and not token_expired:
+                token_dialog_message = "Token has expired"
+                token_expired = True
+            else:
+                token_dialog_message = "Wrong credentials. Entered token is not valid."
+            
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
