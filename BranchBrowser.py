@@ -362,8 +362,8 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 
 class App:
-     # Initialize the application with GitHub client, organization, and repository details
-    def __init__(self, root, github_client, org, repo):
+    # Initialize the application with GitHub client, organization, and repository details
+    def __init__(self, root, github_client, org, repo, credentials_saved):
         self.root = root
         self.github_client = github_client
         self.default_org = org
@@ -374,6 +374,8 @@ class App:
         self.username = self.github_client.get_username()
         print(f'Connected to GitHub with user: {self.username}.')
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
+        if credentials_saved:
+            print("Credentials for 'BranchBrowser' have been saved successfully.")
 
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
@@ -566,9 +568,12 @@ class App:
     def update_github_token(self):
         token_dialog = TokenDialog(self.root)
         updated_token = token_dialog.result
+        if updated_token == None:
+            return
         try:
             test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) # Checking if the entered GitHub token is valid
             save_credentials("BranchBrowser", "github_token", updated_token)
+            print("Credentials for 'BranchBrowser' have been saved successfully.")
         except Exception as e:
             print("Wrong credentials. Entered token is not valid.")
 
@@ -1235,7 +1240,6 @@ def save_credentials(credential_name, username, password):
         'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE
     }
     win32cred.CredWrite(credential)
-    print(f"Credentials for '{credential_name}' saved successfully.")
 
 def get_credentials(credential_name):
     try:
@@ -1301,7 +1305,7 @@ def main():
         available_repositories = github_client.get_organization_repos_names(app_org)
         app_repo = select_default_or_first(default_repo, available_repositories, "repository")
 
-        app = App(root, github_client, app_org, app_repo)  
+        app = App(root, github_client, app_org, app_repo, token_entered_via_token_dialog)  
 
         # Populate combo boxes with available organizations and repositories
         app.org_combo['values'] = available_organizations
