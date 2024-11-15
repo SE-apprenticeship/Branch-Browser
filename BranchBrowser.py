@@ -909,7 +909,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.branch_name = branch_name
         self.update_tree = update_tree
 
-        self.include_push_or_not = tk.BooleanVar(value=True) 
+        self.include_push = tk.BooleanVar(value=True) 
         # StringVar to hold the real-time preview of the path
         self.path_preview = tk.StringVar()
         # Call the superclass's __init__ method
@@ -941,8 +941,8 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
 
         # Checkbox for optional "Push" option
         tk.Label(master, text="Enable push option:").grid(row=4, column=0, sticky='e')
-        self.include_push_or_not = tk.BooleanVar(value=True)  # Default is checked
-        self.push_checkbox = tk.Checkbutton(master, variable=self.include_push_or_not)
+        self.include_push = tk.BooleanVar(value=True)  # Default is checked
+        self.push_checkbox = tk.Checkbutton(master, variable=self.include_push)
         self.push_checkbox.grid(row=4, column=1, sticky='w')
 
         # Editable entry for "Feature-Bug"
@@ -977,29 +977,32 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
     def populate_team_dropdown(self):
         try:
             team_names = self.github_client.get_organization_teams(self.org_name)
-            self.team_dropdown['values'] = team_names
+            self.team_dropdown['values'] = team_names or []
             if team_names:
                 self.team_dropdown.set(team_names[0]) 
         except Exception as e:
             print(f"Error fetching team names: {e}")
+            self.team_dropdown['values'] = []
 
-    # Updates the path preview based on the selected feature prefix, team name, and feature bug, including the "Push" option if selected.
+    # Updates the path preview based on the selected feature prefix,
+    # team name, and feature bug, including the "Push" option if selected.
     def update_path_preview(self):
         feature_prefix = self.feature_branch_prefix.get()
         team_name = self.team_dropdown.get()
         feature_bug = self.feature_bug_entry.get()
 
-        if self.include_push_or_not.get():
+        if self.include_push.get():
             push_selected = "Push"
         else:
             push_selected = ""  # If "Push" is not selected, remove it entirely from the path
 
         # Build the path preview with or without "Push" between team_name and feature_bug
         if push_selected:
-            full_path = f"{feature_prefix}/{team_name}/{push_selected}/{feature_bug}"
+            full_path = os.path.join(feature_prefix, team_name, push_selected, feature_bug)
         else:
-            full_path = f"{feature_prefix}/{team_name}/{feature_bug}"
+            full_path = os.path.join(feature_prefix, team_name, feature_bug)
 
+        full_path = full_path.replace('\\', '/')
         self.path_preview.set(full_path)
 
     def cancel(self, event=None):
@@ -1283,7 +1286,8 @@ def load_config():
     except json.JSONDecodeError:
         print(f"Error decoding JSON from config file {config_path}. Using default values.")
         return None
-#Returns the default value if available, otherwise selects the first available option with a message.   
+#Returns the default value if available, 
+#otherwise selects the first available option with a message.   
 def select_default_or_first(default_value, available_values, entity_name):
     if default_value in available_values:
         return default_value
