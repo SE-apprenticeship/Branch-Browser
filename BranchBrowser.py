@@ -388,9 +388,20 @@ class App:
         self.menu_bar.add_command(label="Refresh", command=self.refresh)
         
         self.root.config(menu=self.menu_bar)
-        
+        self.all_items = {}
         self.frame = tk.Frame(self.root, width=400)
         self.frame.pack(side='left', fill='y')
+
+        self.previous_query = ""
+
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", self.on_search_change)
+
+        search_label = tk.Label(self.frame, text="Search:")
+        search_label.pack(side= 'top')
+        
+        search_entry = tk.Entry(self.frame, textvariable=self.search_var)
+        search_entry.pack(side="top", fill="x")
 
         self.vertical_scrollbar = Scrollbar(self.frame, orient=tk.VERTICAL)
         self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
@@ -404,7 +415,7 @@ class App:
 
         self.vertical_scrollbar.config(command=self.branches_tree.yview)
         self.horizontal_scrollbar.config(command=self.branches_tree.xview)
-        
+
         self.menu = tk.Menu(self.root, tearoff=0)
 
         self.username = self.github_client.get_username()
@@ -439,6 +450,46 @@ class App:
         text.config(yscrollcommand=self.vertical_log_scrollbar.set)
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(text)
+
+    def on_search_change(self, *args):
+        current_query = self.search_var.get()
+        print(f"Search changed: {current_query}")
+
+        if current_query != self.previous_query:
+            print("Query changed, restarting search...")
+            self.previous_query = current_query
+            self.filter_tree()
+    
+    def filter_tree(self):
+        query = self.search_var.get().lower()
+        #print(f"Filtering tree with query: {query}")
+
+        if not query:
+            self.reset_tree()
+            return
+
+        for item in self.branches_tree.get_children():
+            self.check_item(item, query)
+
+    def reset_tree(self):
+        print("Resetting tree...")
+        self.branches_tree.delete(*self.branches_tree.get_children())
+        self.refresh_branches_by_config()
+
+    def check_item(self, item, query):
+        text = self.branches_tree.item(item, "text").lower()
+        #print(f"Checking item: {text} with query: {query}")
+
+        match = query in text or any(self.check_item(child, query) for child in self.branches_tree.get_children(item))
+
+        if not match:
+            self.branches_tree.detach(item)
+            #print(f"Detaching item: {text}")
+        else:
+            self.branches_tree.reattach(item, "", "end")
+            #print(f"Reattaching item: {text}")
+
+        return match
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
