@@ -507,7 +507,7 @@ class App:
         config_dialog.title("Edit Configuration")
 
         dialog_width = 300
-        dialog_height = 300
+        dialog_height = 250
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         position_top = int(screen_height / 2 - dialog_height / 2)
@@ -521,11 +521,11 @@ class App:
             return
 
         org_label = tk.Label(config_dialog, text="Select GitHub organization:")
-        org_label.pack(pady=5)
+        org_label.pack(anchor='w',pady=5, padx=50)
 
         org_combobox = ttk.Combobox(config_dialog, values=organizations, width=30)
         org_combobox.set(self.default_org)  
-        org_combobox.pack(pady=5)
+        org_combobox.pack(anchor='w',pady=5, padx=50)
 
         def on_org_select(event):
             selected_org = org_combobox.get()
@@ -540,18 +540,18 @@ class App:
         org_combobox.bind("<<ComboboxSelected>>", on_org_select)
 
         repo_label = tk.Label(config_dialog, text="Select GitHub repository:")
-        repo_label.pack(pady=5)
+        repo_label.pack(anchor='w',pady=5, padx=50)
 
         repo_combobox = ttk.Combobox(config_dialog, values=[], width=30)
         repo_combobox.set(self.default_repo)  
-        repo_combobox.pack(pady=5)
+        repo_combobox.pack(anchor='w',pady=5, padx=50)
 
         git_hostname_label = tk.Label(config_dialog, text="Enter GitHub hostname:")
-        git_hostname_label.pack(pady=5)
+        git_hostname_label.pack(anchor='w',pady=5, padx=50)
 
-        git_hostname_entry = tk.Entry(config_dialog, width=30)
+        git_hostname_entry = tk.Entry(config_dialog, width=40)
         git_hostname_entry.insert(0, 'github.com')  
-        git_hostname_entry.pack(pady=5)
+        git_hostname_entry.pack(anchor='w',pady=5, padx=50)
 
         def on_save():
             new_org = org_combobox.get()
@@ -573,10 +573,14 @@ class App:
                 messagebox.showwarning("Input Error", "All fields must be provided.")
 
         save_button = tk.Button(config_dialog, text="Save", command=on_save)
-        save_button.pack(pady=10)
+        save_button.pack(side='left', pady=10, padx=50)
 
-        cancel_button = tk.Button(config_dialog, text="Cancel", command=config_dialog.destroy)
-        cancel_button.pack(pady=5)
+        def on_cancel():
+            print("Configuration editing canceled")
+            config_dialog.destroy()
+
+        cancel_button = tk.Button(config_dialog, text="Cancel", command=on_cancel)
+        cancel_button.pack(side='right',pady=10,padx=50)
 
     # Load configuration settings from 'config.json', or use defaults if file is missing or invalid
     @staticmethod
@@ -593,6 +597,15 @@ class App:
         except json.JSONDecodeError:
             print(f"Error decoding JSON from config file {config_path}. Using default values.")
             return None  
+        except IOError as e:
+            print(f"IOError: {e} - There was an issue accessing the file {config_path}.")
+            return None
+        except Exception as e:
+            print(f"Unexpected error loading config: {e}")
+            return None
+        except FileNotFoundError:
+            print(f"Config file {config_path} not found. Using default values.")
+            return None
           
     # Saves the provided configuration data to a file     
     def save_config(self, config):
@@ -600,8 +613,16 @@ class App:
             with open(self.config_path, "w") as config_file:
                 json.dump(config, config_file, indent=4)
             print(f"Config saved to {self.config_path}")
+        except TypeError as e:
+            print(f"TypeError: {e} - The object is not serializable to JSON.")
+        except IOError as e:
+            print(f"IOError: {e} - There was an issue with the file {self.config_path}.")
+        except ValueError as e:
+            print(f"ValueError: {e} - The data is not valid for JSON serialization.")
+        except json.JSONDecodeError as e:
+            print(f"JSONDecodeError: {e} - There was an error decoding the JSON data.")
         except Exception as e:
-            print(f"Error saving config: {e}")
+            print(f"Unexpected error saving config: {e}")
             
     # Updates the main display with new organization and repository settings        
     def update_main_display(self, new_org, new_repo):
@@ -1385,6 +1406,10 @@ def main():
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
     try:
         config = App.load_config()
+        if config is None:
+            print("Configuration loading failed. Exiting...")
+            return
+        
         git_hostname = config.get("GIT_HOSTNAME", "github.com")
         # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(git_hostname, token)
