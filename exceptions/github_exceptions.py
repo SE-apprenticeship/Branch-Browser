@@ -1,6 +1,6 @@
 from github import BadAttributeException, GithubException, BadCredentialsException, RateLimitExceededException, UnknownObjectException
 from message_type import MessageType 
- 
+
 class GithubExceptionsHandler:
     def handle(e):
         text = f"{e.data.get('message')} (Status Code: {e.status})"
