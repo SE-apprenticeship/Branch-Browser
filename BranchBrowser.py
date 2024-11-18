@@ -15,7 +15,7 @@ from github import Github
 import configparser
 import requests
 import win32cred
-from exceptions.exceptions_handler import ExceptionsHandler
+from handlers.exceptions_handler import ExceptionsHandler
 from message_type import MessageType
 
 token = ''
