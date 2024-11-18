@@ -580,10 +580,11 @@ class App:
     def manage_submodules(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
+        team_names = self.github_client.get_organization_teams(org_name)
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
         print(f"Manage submodules for {branch_name} on {org_name}/{repo_name}...")
-        SubmoduleSelectorDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
+        SubmoduleSelectorDialog(self.root, self.github_client, org_name, repo_name, team_names, branch_name, self.update_tree)
 
     
     def create_feature_branch(self):
@@ -714,13 +715,14 @@ class RepoBranchListBoxInfo:
 
 
 class SubmoduleSelectorDialog(simpledialog.Dialog):
-    def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree):
+    def __init__(self, parent, github_client, org_name, repo_name, team_names, branch_name, update_tree):
         self.repo_branch_right_lb_info_map = dict()
         self.repo_branch_left_lb_info_list = list()
 
         self.github_client = github_client
         self.org_name = org_name
         self.repo_name = repo_name
+        self.team_names = team_names
         self.branch_name = branch_name
         self.update_tree = update_tree
 
@@ -757,11 +759,17 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
 
         # Get the selected value of the repo name combobox
         repo_name = self.repos_combobox.get()
+        branch_type = self.branch_type_combobox.get()
+        team_version = self.teams_versions_combobox.get()
 
         # Clear the listbox
         self.repo_branches_right_listbox.delete(0, tk.END)
 
         branches = self.github_client.get_organization_repo_branches(self.org_name, repo_name)
+        branches = [branch for branch in branches if branch.startswith(f"{branch_type}/{team_version}")]
+
+        print(branches)
+        print(f"{branch_type}/{team_version}")
 
         # Update the repo branches right listbox based on the repo name selected value
         for index, branch in enumerate(branches):
@@ -817,13 +825,23 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
 
         org_repos_names = self.github_client.get_organization_repos_names(self.org_name)
         org_repos_names.remove(self.repo_name)
+        org_repos_names.sort()
 
-        # Create combobox
-        self.repos_combobox = ttk.Combobox(self.right_frame, width=87, values=org_repos_names)
-        self.repos_combobox['state'] = 'readonly'
+        # Create combobox for repos names
+        self.repos_combobox = ttk.Combobox(self.right_frame, width=87, values=org_repos_names, state="readonly")
         self.repos_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
         # Set the first item as selected
         self.repos_combobox.current(0)
+
+        # Create combobox for branch type (Feature/Release)
+        self.branch_type_combobox = ttk.Combobox(self.right_frame, width=87, values=["Features", "Release"], state="readonly")
+        self.branch_type_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
+        self.branch_type_combobox.current(0)
+
+        # Create combobox for teams/versions
+        self.teams_versions_combobox = ttk.Combobox(self.right_frame, width=87, values=self.team_names, state="readonly")
+        self.teams_versions_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
+        self.teams_versions_combobox.current(0)
 
         # Create right listbox
         self.repo_branches_right_listbox = tk.Listbox(self.right_frame, width=90, height=40)
@@ -833,16 +851,32 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         button_left = tk.Button(master, text="<", command=self.move_to_left)
 
         # Pack widgets
-        self.left_frame.pack(side=tk.LEFT)
-        self.left_label.pack()
-        self.submodules_left_listbox.pack()
+        # self.left_frame.pack(side=tk.LEFT)
+        # self.left_label.pack()
+        # self.submodules_left_listbox.pack()
 
-        button_left.pack(side=tk.LEFT)
-        button_right.pack(side=tk.LEFT)
+        # button_left.pack(side=tk.LEFT)
+        # button_right.pack(side=tk.LEFT)
 
-        self.right_frame.pack(side=tk.LEFT)
-        self.repos_combobox.pack()
-        self.repo_branches_right_listbox.pack()
+        # self.right_frame.pack(side=tk.LEFT)
+        # self.repos_combobox.pack()
+        # self.branch_type_combobox.pack()
+        # self.teams_combobox.pack()
+        # self.repo_branches_right_listbox.pack()
+
+        # Creating a layout of the components
+        self.left_frame.grid(row=0, column=0, sticky="s")
+        self.left_label.grid(row=0, column=0)
+        self.submodules_left_listbox.grid(row=1, column=0)
+
+        button_left.grid(row=0, column=1)
+        button_right.grid(row=0, column=2)
+
+        self.right_frame.grid(row=0, column=3)
+        self.repos_combobox.grid(row=0, column=0)
+        self.branch_type_combobox.grid(row=1, column=0)
+        self.teams_versions_combobox.grid(row=2, column=0)
+        self.repo_branches_right_listbox.grid(row=3, column=0)
 
         # Initialize current state of submodules for current org/repo/branch
         self.init_submodules_left_listbox()
