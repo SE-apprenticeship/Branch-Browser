@@ -1483,7 +1483,7 @@ def main():
             print("Configuration loading failed. Exiting...")
             return
         
-        git_hostname = config.get("GIT_HOSTNAME", "github.com")
+        git_hostname = config.get("GIT_HOSTNAME", "github.com") if config else GIT_HOSTNAME
         # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(git_hostname, token)
        
