@@ -755,24 +755,39 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
 
 
     def update_repo_branches_right_listbox(self, event = None):
-        self.repo_branch_right_lb_info_map.clear()
-
-        # Get the selected value of the repo name combobox
+        # Get the selected values of the repo name and branch type comboboxes
         repo_name = self.repos_combobox.get()
         branch_type = self.branch_type_combobox.get()
+
+        if event == None or event.widget == self.repos_combobox:
+            self.branches = self.github_client.get_organization_repo_branches(self.org_name, repo_name)
+        elif event.widget == self.branch_type_combobox and branch_type == "Release":
+            # Getting only the release branches
+            release_branches = [branch for branch in self.branches if branch.startswith("Release")]
+            # Getting the versions such as 1.0, 2.0 etc.
+            versions = list({branch.split("/")[1] for branch in release_branches})
+            # Sorting the versions by their numerical value
+            sorted_versions = sorted(versions, key=lambda v: float(v))
+            # Setting the extracted versions as the values for the team/version combobox
+            self.teams_versions_combobox['values'] = sorted_versions
+            self.teams_versions_combobox.current(0)
+        elif event.widget == self.branch_type_combobox and branch_type == "Features":
+            # Setting the team names to be values for the team/version combobox
+            self.teams_versions_combobox['values'] = self.team_names
+            self.teams_versions_combobox.current(0)
+
+        self.repo_branch_right_lb_info_map.clear()
+
+        # Get the selected value of the team/version combobox
         team_version = self.teams_versions_combobox.get()
 
         # Clear the listbox
         self.repo_branches_right_listbox.delete(0, tk.END)
 
-        branches = self.github_client.get_organization_repo_branches(self.org_name, repo_name)
-        branches = [branch for branch in branches if branch.startswith(f"{branch_type}/{team_version}")]
+        filtered_branches = [branch for branch in self.branches if branch.startswith(f"{branch_type}/{team_version}")]
 
-        print(branches)
-        print(f"{branch_type}/{team_version}")
-
-        # Update the repo branches right listbox based on the repo name selected value
-        for index, branch in enumerate(branches):
+        # Update the repo branches right listbox based on the selected values of the comboboxes
+        for index, branch in enumerate(filtered_branches):
             repo_branch_lb_info = RepoBranchListBoxInfo(repo_name, branch, listbox_position=index)
             repo_branch_lb_info.set_used(str(repo_branch_lb_info) in self.submodules_left_listbox.get(0, tk.END))
             self.repo_branch_right_lb_info_map[str(repo_branch_lb_info)] = repo_branch_lb_info
@@ -849,20 +864,6 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         # Create buttons
         button_right = tk.Button(master, text=">", command=self.move_to_right)
         button_left = tk.Button(master, text="<", command=self.move_to_left)
-
-        # Pack widgets
-        # self.left_frame.pack(side=tk.LEFT)
-        # self.left_label.pack()
-        # self.submodules_left_listbox.pack()
-
-        # button_left.pack(side=tk.LEFT)
-        # button_right.pack(side=tk.LEFT)
-
-        # self.right_frame.pack(side=tk.LEFT)
-        # self.repos_combobox.pack()
-        # self.branch_type_combobox.pack()
-        # self.teams_combobox.pack()
-        # self.repo_branches_right_listbox.pack()
 
         # Creating a layout of the components
         self.left_frame.grid(row=0, column=0, sticky="s")
