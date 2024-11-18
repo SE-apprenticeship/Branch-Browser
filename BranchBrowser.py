@@ -110,10 +110,13 @@ class GitHubRepoSubmoduleManager:
         }
 
     def make_request(self, method, url, data=None):
-        response = requests.request(method, url, headers=self.headers, data=json.dumps(data))
-        response.raise_for_status()
-        return response.json()
-    
+        try:
+            response = requests.request(method, url, headers=self.headers, data=json.dumps(data))
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            handle_and_print_exception(e)
+            
     def fix_config_file_formatting(self, content):
         # Remove \n in front of [ - because of duplicates
         content = re.sub(r'\n(?=\[)', '', content)
