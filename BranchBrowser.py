@@ -467,10 +467,13 @@ class App:
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
-
-        self.branches_tree.delete(*self.branches_tree.get_children())
+        
+        self.clear_branches_tree()
         self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
         self.populate_tree(self.branches_tree, branches_structure)
+
+    def clear_branches_tree(self):
+        self.branches_tree.delete(*self.branches_tree.get_children())
 
     # Recursively populate branches tree with nested branch structure
     def populate_tree(self, tree, node, parent=''):
@@ -502,20 +505,15 @@ class App:
     def update_tree(self, event):
         self.refresh_branches_by_config()
     
-    def fetch_data(self, label, event):
+    def fetch_data(self):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
-        
-        label.after(0, lambda: label.pack_forget())
-        data = "Data fetched successfully!"
-        label.after(0, lambda: tk.messagebox.showinfo("Success", data))
          
     def refresh(self):
-        wait_label = tk.Label(self.root, text="Please Wait...", font=("Arial", 14))
-        wait_label.pack(padx=20, pady=20)
-        
-        thread = threading.Thread(target=self.fetch_data, args=(wait_label, None))
+        self.clear_branches_tree()
+        self.branches_tree.heading("#0", text="Please wait. Refreshing data...")
+        thread = threading.Thread(target=self.fetch_data)
         thread.start()
                 
     def on_right_click(self, event):
