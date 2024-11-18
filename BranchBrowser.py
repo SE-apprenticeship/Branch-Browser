@@ -1283,9 +1283,9 @@ def get_credentials(credential_name):
 def print_message(type, message):
     print(type.value + ' ' + message)
     
-def handle_and_print_exception(e, desc):
+def handle_and_print_exception(e):
     type, message = exceptions_handler.handle(e)
-    print_message(type, message + ". " + desc)
+    print_message(type, message)
     
 def main():
     global token
