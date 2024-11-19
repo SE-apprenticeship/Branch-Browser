@@ -368,11 +368,12 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 class App:
      # Initialize the application with GitHub client, organization, and repository details
-    def __init__(self, root, github_client, org, repo, config_path):
+    def __init__(self, root, github_client, org, repo, config_path, team): 
         self.root = root
         self.github_client = github_client
         self.default_org = org
         self.default_repo = repo
+        self.default_team = team
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
@@ -511,7 +512,7 @@ class App:
         config_dialog.title("Edit Configuration")
 
         dialog_width = 300
-        dialog_height = 250
+        dialog_height = 300
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         position_top = int(screen_height / 2 - dialog_height / 2)
@@ -531,18 +532,6 @@ class App:
         org_combobox.set(self.default_org)  
         org_combobox.pack(anchor='w',pady=5, padx=50)
 
-        def on_org_select(event):
-            selected_org = org_combobox.get()
-            repositories = self.github_client.get_organization_repos_names(selected_org)
-            if not repositories:
-                messagebox.showwarning("No Repositories", "No repositories found for the selected organization.")
-                return
-
-            repo_combobox['values'] = repositories
-            repo_combobox.set(self.default_repo) 
-
-        org_combobox.bind("<<ComboboxSelected>>", on_org_select)
-
         repo_label = tk.Label(config_dialog, text="Select GitHub repository:")
         repo_label.pack(anchor='w',pady=5, padx=50)
 
@@ -550,28 +539,66 @@ class App:
         repo_combobox.set(self.default_repo)  
         repo_combobox.pack(anchor='w',pady=5, padx=50)
 
+        team_label = tk.Label(config_dialog, text="Select team:")
+        team_label.pack(anchor='w', pady=5, padx=50)
+
+        team_combobox = ttk.Combobox(config_dialog, values=[], width=30)
+        team_combobox.set(self.default_team) 
+        team_combobox.pack(anchor='w', pady=5, padx=50)
+
         git_hostname_label = tk.Label(config_dialog, text="Enter GitHub hostname:")
         git_hostname_label.pack(anchor='w',pady=5, padx=50)
 
         git_hostname_entry = tk.Entry(config_dialog, width=40)
         git_hostname_entry.insert(0, 'github.com')  
         git_hostname_entry.pack(anchor='w',pady=5, padx=50)
+        
+        def load_repos_and_teams(org_name, repo_combobox, team_combobox):
+            repositories = self.github_client.get_organization_repos_names(org_name)
+            if not repositories:
+                messagebox.showwarning("No Repositories", "No repositories found for the selected organization.")
+                return
+            repo_combobox['values'] = repositories
+            repo_combobox.set(self.default_repo) 
+            
+            teams = self.github_client.get_organization_teams(org_name)
+            if not teams:
+                messagebox.showwarning("No Teams", "No teams found for the selected organization.")
+                return
+            team_combobox['values'] = teams
+            if self.default_team and self.default_team in teams:
+                team_combobox.set(self.default_team)
+            else:
+                team_combobox.set(teams[0])  # Set to the first available team if default is not found
+
+        def on_org_select(event):
+            selected_org = org_combobox.get()
+            load_repos_and_teams(selected_org, repo_combobox, team_combobox)
+
+        org_combobox.bind("<<ComboboxSelected>>", on_org_select)
+
+        # Initialize repositories and teams for the default organization on dialog open
+        load_repos_and_teams(self.default_org, repo_combobox, team_combobox)
 
         def on_save():
             new_org = org_combobox.get()
             new_repo = repo_combobox.get()
+            new_team = team_combobox.get()
             new_git_hostname = git_hostname_entry.get()
 
-            if new_org and new_repo and new_git_hostname:
+            if new_org and new_repo and new_git_hostname and new_team:
                 config = {
                     'default_organization': new_org,
                     'default_repository': new_repo,
+                    'default_team': new_team,
                     'GIT_HOSTNAME': new_git_hostname
                 }
 
                 self.save_config(config)
+                self.default_team = new_team
                 messagebox.showinfo("Success", "Configuration updated and saved.")
-                self.update_main_display(new_org, new_repo)
+                self.update_main_display(new_org, new_repo, new_team)
+                self.refresh_branches_by_config()
                 config_dialog.destroy()
             else:
                 messagebox.showwarning("Input Error", "All fields must be provided.")
@@ -629,7 +656,7 @@ class App:
             print(f"Unexpected error saving config: {e}")
             
     # Updates the main display with new organization and repository settings        
-    def update_main_display(self, new_org, new_repo):
+    def update_main_display(self, new_org, new_repo, team): 
         self.default_org = new_org
         self.default_repo = new_repo
 
@@ -638,7 +665,7 @@ class App:
 
         self.org_combo.set(self.default_org)
         self.repo_combo.set(self.default_repo)
-        print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
+        print(f'Using organization: {self.default_org}, repository: {self.default_repo}, team: {team}') 
             
     def fetch_data(self, label, event):
         self.update_repos(None)
@@ -730,7 +757,7 @@ class App:
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
         print(f"Create feature branch for {branch_name} on {org_name}/{repo_name}...")
-        CreateFeatureBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
+        CreateFeatureBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree, self.config_path)
 
     def create_release_branch(self):
         org_name = self.org_combo.get()
@@ -1039,7 +1066,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
 
 
 class CreateFeatureBranchDialog(simpledialog.Dialog):
-    def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree):
+    def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree, config_path):
 
         self.github_client = github_client
         self.org_name = org_name
@@ -1047,9 +1074,20 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.branch_name = branch_name
         self.update_tree = update_tree
 
+        if isinstance(config_path, str):
+            try:
+                with open(config_path, 'r') as file:
+                    self.config = json.load(file)
+            except Exception as e:
+                print(f"Error loading configuration file: {e}")
+                self.config = {}
+        else:
+            self.config = config_path
+
         self.include_push = tk.BooleanVar(value=True) 
         # StringVar to hold the real-time preview of the path
         self.path_preview = tk.StringVar()
+        self.default_team = self.config.get("default_team", "")
         # Call the superclass's __init__ method
         super().__init__(parent)
 
@@ -1116,8 +1154,10 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         try:
             team_names = self.github_client.get_organization_teams(self.org_name)
             self.team_dropdown['values'] = team_names or []
-            if team_names:
-                self.team_dropdown.set(team_names[0]) 
+            if self.default_team in team_names:
+                    self.team_dropdown.set(self.default_team)
+            else:
+                    self.team_dropdown.set(team_names[0]) 
         except Exception as e:
             print(f"Error fetching team names: {e}")
             self.team_dropdown['values'] = []
@@ -1483,6 +1523,7 @@ def main():
             print("Configuration loading failed. Exiting...")
             return
         
+        default_team = config.get("default_team") if config else "default_team"
         git_hostname = config.get("GIT_HOSTNAME", "github.com") if config else GIT_HOSTNAME
         # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(git_hostname, token)
@@ -1499,7 +1540,11 @@ def main():
         available_repositories = github_client.get_organization_repos_names(app_org)
         app_repo = select_default_or_first(default_repo, available_repositories, "repository")
 
-        app = App(root, github_client, app_org, app_repo, config_path)  
+        # Get list of available teams for the selected organization (optional, if required)
+        available_teams = github_client.get_organization_teams(app_org) 
+        app_team = select_default_or_first(default_team, available_teams, "team")
+
+        app = App(root, github_client, app_org, app_repo, config_path, app_team)  #, app_team
 
         # Populate combo boxes with available organizations and repositories
         app.org_combo['values'] = available_organizations
