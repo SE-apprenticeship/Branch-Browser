@@ -568,10 +568,11 @@ class App:
     def update_github_token(self):
         token_dialog = TokenDialog(self.root)
         updated_token = token_dialog.result
-        if updated_token == None:
+        if not updated_token:
             return
         try:
-            test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) # Checking if the entered GitHub token is valid
+            # Checking if the entered GitHub token is valid
+            test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) 
             save_credentials("BranchBrowser", "github_token", updated_token)
             print("Credentials for 'BranchBrowser' have been saved successfully.")
         except Exception as e:
@@ -1262,10 +1263,12 @@ def main():
     token_expired = False
     username, password = get_credentials("BranchBrowser")
     while(True):
-        if not (username and password) or (username and password and token_expired): # If there are no credentials saved (first use or the app) or the token exists but is expired
+        # If there are no credentials saved (first use or the app) or the token exists but is expired
+        if not (username and password) or (username and password and token_expired): 
             token_dialog = TokenDialog(root, token_dialog_message) # Shows the dialog with a message
             token = token_dialog.result
-            if token == None: # If the user clicks "Cancel" or just closes the window
+            # If the user clicks "Cancel" or just closes the window
+            if not token: 
                 return
             token_entered_via_token_dialog = True
         elif username and password:
