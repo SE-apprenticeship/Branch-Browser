@@ -67,7 +67,11 @@ class GitHubClient:
                     node[part] = {}
                 node = node[part]
         return structure
-
+    
+    #Retrieve the names of teams in the specified organization.
+    def get_organization_teams(self, org_name):
+        org = self.github.get_organization(org_name)
+        return [team.name for team in org.get_teams()]
 
 class GitHubRepoSubmoduleManager:
     def __init__(self, owner, repo_top, token):
@@ -384,11 +388,9 @@ class App:
         self.menu_bar.add_command(label="Refresh", command=self.refresh)
         
         self.root.config(menu=self.menu_bar)
-        
-        self.treeview_frame = tk.Frame(self.root, width=400)
+        self.treeview_frame = tk.Frame(self.root, width=300)
         self.treeview_frame.pack_propagate(False)
         self.treeview_frame.pack(side='left', fill='y')
-
         self.vertical_scrollbar = Scrollbar(self.treeview_frame, orient=tk.VERTICAL)
         self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
         
@@ -396,9 +398,9 @@ class App:
         self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
         
         self.branches_tree = ttk.Treeview(self.treeview_frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
-        self.branches_tree.pack(fill='both', expand=True)
+        self.branches_tree.pack(fill=tk.BOTH, expand=True)
         self.branches_tree.column("#0", stretch=False)
-
+        
         self.vertical_scrollbar.config(command=self.branches_tree.yview)
         self.horizontal_scrollbar.config(command=self.branches_tree.xview)
         
@@ -423,7 +425,7 @@ class App:
         self.repo_combo = ttk.Combobox(self.contents_frame)
         self.repo_combo['state'] = 'readonly'
         self.repo_combo.pack(side='top', fill='x')
-        
+
         # Initialize the tooltip functionality for the treeview
         TreeviewTooltip(self.github_client, self.org_combo, self.repo_combo, self.branches_tree, tooltip_text)
 
@@ -437,8 +439,13 @@ class App:
         log_text.pack(side='top', fill='both', expand=True)
         log_text.config(yscrollcommand=self.vertical_log_scrollbar.set)
         
+        #Colorized text configuration
+        log_text.tag_configure("error", foreground="red", font=("Consolas", 10, "bold"))
+        log_text.tag_configure("warning", foreground="orange", font=("Consolas", 10, "bold"))
+        log_text.tag_configure("info", foreground="black", font=("Consolas", 10, "bold"))
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(log_text)
+
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
@@ -467,13 +474,17 @@ class App:
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
-
+        self.clear_branches_tree()
+        
         heading_text=f'Branches on {self.org_combo.get()}/{self.repo_combo.get()}'
-        self.branches_tree.delete(*self.branches_tree.get_children())
-        self.branches_tree.heading("#0", text = heading_text)
+        self.branches_tree.heading("#0", text = heading_text, anchor=tk.W)
         text_width = tk.font.Font().measure(heading_text)
         self.branches_tree.column("#0", width=text_width, stretch=False)
         self.populate_tree(self.branches_tree, branches_structure)
+
+
+    def clear_branches_tree(self):
+        self.branches_tree.delete(*self.branches_tree.get_children())
 
     # Recursively populate branches tree with nested branch structure
     def populate_tree(self, tree, node, parent=''):
@@ -505,20 +516,15 @@ class App:
     def update_tree(self, event):
         self.refresh_branches_by_config()
     
-    def fetch_data(self, label, event):
+    def fetch_data(self):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
-        
-        label.after(0, lambda: label.pack_forget())
-        data = "Data fetched successfully!"
-        label.after(0, lambda: tk.messagebox.showinfo("Success", data))
          
     def refresh(self):
-        wait_label = tk.Label(self.contents_frame, text="Please Wait...", font=("Arial", 14))
-        wait_label.pack(padx=20, pady=20)
-        
-        thread = threading.Thread(target=self.fetch_data, args=(wait_label, None))
+        self.clear_branches_tree()
+        self.branches_tree.heading("#0", text="Please wait. Refreshing data...", anchor=tk.W)
+        thread = threading.Thread(target=self.fetch_data)
         thread.start()
                 
     def on_right_click(self, event):
@@ -567,7 +573,7 @@ class App:
         # Check the result
         if result:
             print(f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
-            self.update_tree(None) # Update tree to reflect changes
+            self.branches_tree.delete(selected_item)
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
     def update_github_token(self):
@@ -912,32 +918,101 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.branch_name = branch_name
         self.update_tree = update_tree
 
+        self.include_push = tk.BooleanVar(value=True) 
+        # StringVar to hold the real-time preview of the path
+        self.path_preview = tk.StringVar()
         # Call the superclass's __init__ method
         super().__init__(parent)
 
     def body(self, master):
-        # Disable resizing of the dialog
         self.resizable(False, False)
         self.title(f'Create feature branch for {self.org_name}/{self.repo_name}/{self.branch_name}')
 
-        tk.Label(master, text="Enter replace search prefix (prefix that will be replaced by feature branch prefix):").grid(row=0, sticky='w')
+        tk.Label(master, text="Prefix that will be replaced by feature branch prefix:").grid(row=0, sticky='e')
         self.search_branch_prefix = tk.Entry(master, width=60)
-        self.search_branch_prefix.insert(0, self.branch_name)
+        self.search_branch_prefix.insert(0, "Release")
         self.search_branch_prefix.grid(row=0, column=1)
+        
+        # Read-only entry for "Features"
+        tk.Label(master, text="Feature branch prefix:").grid(row=1, sticky='e')
+        self.feature_branch_prefix = tk.Entry(master, width=60)
+        self.feature_branch_prefix.insert(0, "Features")
+        self.feature_branch_prefix.configure(state='readonly')  
+        self.feature_branch_prefix.grid(row=1, column=1, sticky='w')
 
-        tk.Label(master, text="Enter feature branch prefix (Features/TeamName[/Feature-BugName]):").grid(row=1, sticky='w')
-        self.replace_feature_branch_prefix = tk.Entry(master, width=60)
-        self.replace_feature_branch_prefix.insert(0, "Features/TeamName/Feature-Bug")
-        self.replace_feature_branch_prefix.grid(row=1, column=1)
+        # Dropdown for team names
+        tk.Label(master, text="Select team:").grid(row=3, column=0, sticky='e') 
+        self.team_dropdown = ttk.Combobox(master, values=[], width=20)
+        self.team_dropdown.grid(row=3, column=1, sticky='w')
+
+        # Populate the dropdown with team names from GitHub
+        self.populate_team_dropdown()
+
+        # Checkbox for optional "Push" option
+        tk.Label(master, text="Enable push option:").grid(row=4, column=0, sticky='e')
+        self.include_push = tk.BooleanVar(value=True)  # Default is checked
+        self.push_checkbox = tk.Checkbutton(master, variable=self.include_push)
+        self.push_checkbox.grid(row=4, column=1, sticky='w')
+
+        # Editable entry for "Feature-Bug"
+        tk.Label(master, text="Feature/Bug description:").grid(row=5, column=0, sticky='e')
+        self.feature_bug_entry = tk.Entry(master, width=20)
+        self.feature_bug_entry.insert(0, "Feature-Bug")  # Default text
+        self.feature_bug_entry.grid(row=5, column=1, sticky='w')
+
+        # Preview label to display the real-time generated path
+        tk.Label(master, text="Feature path preview:").grid(row=6, column=0, sticky='e')
+        self.replace_feature_branch_prefix = tk.Entry(master, textvariable=self.path_preview, fg="blue",width=60, state="readonly")
+        self.replace_feature_branch_prefix.grid(row=6, column=1, sticky='w')
+
+        # Set up listeners to update the preview when fields change
+        self.team_dropdown.bind("<<ComboboxSelected>>", lambda event: self.update_path_preview())
+        self.feature_bug_entry.bind("<KeyRelease>", lambda event: self.update_path_preview())
+        self.push_checkbox.config(command=self.update_path_preview)
+
+        # Initial preview setup
+        self.update_path_preview()
 
         # get submodules info - only 1st level
         self.submodules_info = get_submodules_info(self.github_client, self.org_name, self.repo_name, self.branch_name)
 
-        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=2, sticky='w')
+        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=7, sticky='w')
 
         submodules_hierarchy_string = f"R:{self.repo_name} B:{self.branch_name}\n" + build_hierarchy(self.submodules_info, format_output, get_sublist)
 
-        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=3, sticky='w')
+        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=8, sticky='w')
+   
+    # Use the GitHubClient to get team names for the organization
+    def populate_team_dropdown(self):
+        try:
+            team_names = self.github_client.get_organization_teams(self.org_name)
+            self.team_dropdown['values'] = team_names or []
+            if team_names:
+                self.team_dropdown.set(team_names[0]) 
+        except Exception as e:
+            print(f"Error fetching team names: {e}")
+            self.team_dropdown['values'] = []
+
+    # Updates the path preview based on the selected feature prefix,
+    # team name, and feature bug, including the "Push" option if selected.
+    def update_path_preview(self):
+        feature_prefix = self.feature_branch_prefix.get()
+        team_name = self.team_dropdown.get()
+        feature_bug = self.feature_bug_entry.get()
+
+        if self.include_push.get():
+            push_selected = "Push"
+        else:
+            push_selected = ""  # If "Push" is not selected, remove it entirely from the path
+
+        # Build the path preview with or without "Push" between team_name and feature_bug
+        if push_selected:
+            full_path = os.path.join(feature_prefix, team_name, push_selected, feature_bug)
+        else:
+            full_path = os.path.join(feature_prefix, team_name, feature_bug)
+
+        full_path = full_path.replace('\\', '/')
+        self.path_preview.set(full_path)
 
     def cancel(self, event=None):
         print(f"Create feature branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
@@ -961,7 +1036,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
             # Perform your action here
             print("Creating feature branch structure...")
 
-            # Creeate feature branch for submodule
+            # Create feature branch for submodule
             new_branch_name = self.branch_name.replace(self.search_branch_prefix_val, self.replace_feature_branch_prefix_val)
 
             # Validate if prefix replace will actually change branch name
@@ -1220,7 +1295,8 @@ def load_config():
     except json.JSONDecodeError:
         print(f"Error decoding JSON from config file {config_path}. Using default values.")
         return None
-#Returns the default value if available, otherwise selects the first available option with a message.   
+#Returns the default value if available, 
+#otherwise selects the first available option with a message.   
 def select_default_or_first(default_value, available_values, entity_name):
     if default_value in available_values:
         return default_value
