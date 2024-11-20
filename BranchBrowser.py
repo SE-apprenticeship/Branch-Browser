@@ -17,7 +17,6 @@ import requests
 import win32cred
 from handlers.exceptions_handler import ExceptionsHandler
 from message_type import MessageType
-from exceptions import exception_desc
 token = ''
 GIT_HOSTNAME = 'github.com'
 exceptions_handler = ExceptionsHandler()
@@ -46,8 +45,8 @@ class GitHubClient:
         try:
             repos = [repo.name for repo in self.github.get_organization(org_name).get_repos()]
         except Exception as e:
-            error_desc = exception_desc.description['GET_ORGS'].format(org_name=org_name)
-            handle_and_print_exception(e, error_desc)
+            err_desc = f"Authenticated user ('{self.username}') lacks the necessary permissions to access the list of organizations."
+            handle_and_print_exception(e, err_desc)
         return repos
     
     def get_organization_repo_branches(self, org_name, repo_name):
@@ -55,8 +54,8 @@ class GitHubClient:
         try:
             branches = [branch.name for branch in self.github.get_organization(org_name).get_repo(repo_name).get_branches()]
         except Exception as e:
-            error_desc = exception_desc.description['GET_BRANCHES'].format(org_name=org_name,repo_name=repo_name)
-            handle_and_print_exception(e,error_desc )
+            err_desc = f"Authenticated user ('{self.username}') lacks the necessary permissions to access the list of branches for repository: '{org_name}{repo_name}'."
+            handle_and_print_exception(e, err_desc)
         return branches
     
     def get_organization_repo_branch_gitmodules_content(self, org_name, repo_name, branch_name):
@@ -66,16 +65,15 @@ class GitHubClient:
             repo = org.get_repo(repo_name)
             file_content = repo.get_contents('.gitmodules', ref=branch_name)
         except Exception as e:
-            error_desc = exception_desc.description['NO_GITMODULES'].format(repo_name = repo_name, branch_name = branch_name)
-            handle_and_print_exception(e, error_desc)
+            err_desc = f"No .gitmodules file found. The repository '{repo_name} {branch_name}' does not contain any submodules or the submodule configuration is missing/corrupted."
+            handle_and_print_exception(e, err_desc)
         return file_content.decoded_content.decode('utf-8') if file_content else None
 
     def get_organization_repo_branch_commit_sha(self, org_name, repo_name, branch_name):
         try:
             return self.github.get_organization(org_name).get_repo(repo_name).get_branch(branch_name).commit.sha
         except Exception as e:
-            error_desc = exception_desc.description['NO_COMMIT_SHA']
-            error_desc = error_desc.format(username = self.get_username(), org_name = org_name, repo_name = repo_name, branch_name = branch_name)
+            error_desc = f"Commit SHA not found.The branch may be empty, or the user ('{self.username}') lacks permissions to access the commit history for '{org_name}{repo_name}{branch_name}'."
             handle_and_print_exception(e, error_desc)
             return
 
@@ -84,7 +82,7 @@ class GitHubClient:
         try:
             self.github.get_organization(org_name).get_repo(repo_name).create_git_ref(ref=f"refs/heads/{new_branch_name}", sha=source_commit_sha)
         except Exception as e:
-            error_desc = exception_desc.description['CREATE_BRANCH'].format(branch_name = new_branch_name)
+            error_desc = f"The new branch name ('{self.branch_name}') may already exist, or the user lacks permission to create branches."
             handle_and_print_exception(e, error_desc)
             
     def organization_repo_delete_branch(self, org_name, repo_name, branch_name):
@@ -92,13 +90,12 @@ class GitHubClient:
             # Fetch the branch reference
             ref = self.github.get_organization(org_name).get_repo(repo_name).get_git_ref(f"heads/{branch_name}")
         except Exception as e:
-            handle_and_print_exception(e, f"The specified Git reference for the branch '{branch_name}' may not exist.")
+            handle_and_print_exception(e, f"The specified Git reference for the branch '{branch_name}' does not exist.")
         try:
             # Delete the branch by deleting its reference
             ref.delete()
         except Exception as e:
-            error_desc = exception_desc.description['DELETE_BRANCH'].format(branch_name = branch_name)
-            handle_and_print_exception(e, error_desc)
+            handle_and_print_exception(e, f"Unable to delete branch {branch_name}.")
 
     def get_repo_branches_structure(self, org_name, repo_name):
         repo = self.github.get_organization(org_name).get_repo(repo_name)
@@ -130,8 +127,7 @@ class GitHubRepoSubmoduleManager:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            error_desc = exception_desc.description['MAKE_REQUEST'].format(url = url, method = method)
-            handle_and_print_exception(e, error_desc)
+            handle_and_print_exception(e, f"Unable to make request [{method}] on {url}")
             
     def fix_config_file_formatting(self, content):
         # Remove \n in front of [ - because of duplicates
@@ -1274,7 +1270,7 @@ def load_config():
             config = json.load(config_file)
             return config
     except json.JSONDecodeError as e:
-        handle_and_print_exception(e)
+        handle_and_print_exception(e, 'Error decoding JSON!')
         return None
     
 #Returns the default value if available, otherwise selects the first available option with a message.   
@@ -1296,10 +1292,9 @@ def save_credentials(credential_name, username, password):
     }
     try:
         win32cred.CredWrite(credential)
-        message = f"Credentials for '{credential_name}' saved successfully."
-        print_message(MessageType.INFO, message)
+        print_message(MessageType.INFO, f"Credentials for '{credential_name}' saved successfully.")
     except Exception as e:
-        handle_and_print_exception(e, 'Occured while saving credentials!')
+        handle_and_print_exception(e, 'Error while saving credentials.')
 
 def get_credentials(credential_name):
     try:
@@ -1311,12 +1306,12 @@ def get_credentials(credential_name):
         handle_and_print_exception(e, 'Can\'t get credentials from Windows Credential Manager.')
         return None,None
 
-def print_message(type, message, desc = ''):
-    print(type.value + ' ' + message + "  " + desc) 
+def print_message(type, message):
+    print(type.value + ' ' + message) 
     
 def handle_and_print_exception(e, desc = None):
-    type, message = exceptions_handler.handle(e)
-    print_message(type, message, desc) if desc else print_message(type, message, '')
+    type, message = exceptions_handler.handle(e, desc)
+    print_message(type, message)
         
 def main():
     global token

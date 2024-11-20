@@ -6,10 +6,10 @@ from exceptions.request_exceptions import RequestExceptionsHandler
 from message_type import MessageType 
 
 class ExceptionsHandler:
-    def handle(self, e):
+    def handle(self, e, desc):
         error_message = (MessageType.ERROR, "Something went wrong...")
         if isinstance(e, GithubException) or isinstance(e, BadAttributeException):
-            error_message = GithubExceptionsHandler.handle(e)
+            error_message = GithubExceptionsHandler.handle(e, desc)
         elif isinstance(e, RequestException):
             error_message = RequestExceptionsHandler.handle(e)
         elif isinstance(e, JSONDecodeError):
