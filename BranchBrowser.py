@@ -717,8 +717,8 @@ class App:
 
         Steps:
             1. Clears the TreeView to remove any existing items.
-            2. Fetches the list of local branches using the `git branch --list` command.
-            3. Fetches the list of remote branches using the `git branch -r --list` command.
+            2. Fetches the list of local branches using the git branch --list command.
+            3. Fetches the list of remote branches using the git branch -r --list command.
             4. Adds the remote branches to the TreeView widget.
             5. Displays a success message upon completion.
 
