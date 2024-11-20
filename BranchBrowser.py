@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
 from tkinter import simpledialog
-from github import Github
+from github import Github, RateLimitExceededException, UnknownObjectException
 import configparser
 import requests
 import win32cred
@@ -26,8 +26,10 @@ class GitHubClient:
     def __init__(self, hostname, token):
         self.github = Github(base_url=f"https://api.{hostname}", login_or_token=token)
         self.user = self.github.get_user()
-        self.username = self.user.login # this will throw exception if token is invalid
-    
+        try:
+            self.username = self.user.login # this will throw exception if token is invalid
+        except Exception as e:
+            handle_and_print_exception(e, 'Token is not valid.')
     def get_username(self):
         return self.username
 
@@ -36,8 +38,7 @@ class GitHubClient:
         try:
             orgs = [org.login for org in self.user.get_orgs()]
         except Exception as e:
-            error_desc  = exception_desc.description['GET_ORGS'].format(username=self.get_username())
-            handle_and_print_exception(e, error_desc)
+            handle_and_print_exception(e, 'No organizations found.')
         return orgs
     
     def get_organization_repos_names(self, org_name):
@@ -45,7 +46,7 @@ class GitHubClient:
         try:
             repos = [repo.name for repo in self.github.get_organization(org_name).get_repos()]
         except Exception as e:
-            error_desc = exception_desc.description['GET_REPOS'].format(username=self.get_username(), org_name = org_name)
+            error_desc = exception_desc.description['GET_ORGS'].format(org_name=org_name)
             handle_and_print_exception(e, error_desc)
         return repos
     
@@ -54,8 +55,8 @@ class GitHubClient:
         try:
             branches = [branch.name for branch in self.github.get_organization(org_name).get_repo(repo_name).get_branches()]
         except Exception as e:
-            error_desc = exception_desc.description['GET_BRANCHES'].format(username=self.get_username(), org_name = org_name, repo_name = repo_name)
-            handle_and_print_exception(e, error_desc)
+            error_desc = exception_desc.description['GET_BRANCHES'].format(org_name=org_name,repo_name=repo_name)
+            handle_and_print_exception(e,error_desc )
         return branches
     
     def get_organization_repo_branch_gitmodules_content(self, org_name, repo_name, branch_name):
@@ -91,8 +92,7 @@ class GitHubClient:
             # Fetch the branch reference
             ref = self.github.get_organization(org_name).get_repo(repo_name).get_git_ref(f"heads/{branch_name}")
         except Exception as e:
-            error_desc = exception_desc.description['NO_GIT_REF'].format(branch_name)
-            handle_and_print_exception(e, error_desc)
+            handle_and_print_exception(e, f"The specified Git reference for the branch '{branch_name}' may not exist.")
         try:
             # Delete the branch by deleting its reference
             ref.delete()
@@ -404,6 +404,11 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
     except Exception as e:
         handle_and_print_exception(e)
         # extend with sub sub module info
+        
+def read_exception_description(key):
+    with open("exceptions/exceptions_description.json", "r") as file:
+        data = json.load(file)
+    return data[key]
 
 class App:
      # Initialize the application with GitHub client, organization, and repository details
@@ -624,8 +629,8 @@ class App:
             test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) # Checking if the entered GitHub token is valid
             save_credentials("BranchBrowser", "github_token", updated_token)
         except Exception as e:
-            error_desc = exception_desc.description['GITHUB_CLIENT']
-            handle_and_print_exception(e, error_desc)
+            print(e)
+            handle_and_print_exception(e)
 
         
     def manage_submodules(self):
@@ -1279,7 +1284,7 @@ def select_default_or_first(default_value, available_values, entity_name):
     else:
         message = f"Default {entity_name} '{default_value}' not found. Using the first available {entity_name}."
         print_message(MessageType.WARNING, message)
-        return available_values[0] 
+        return available_values[0]
 
 def save_credentials(credential_name, username, password):
     credential = {
