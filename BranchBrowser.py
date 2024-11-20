@@ -881,7 +881,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         # Create combobox and label for repos names
         self.repo_label = tk.Label(self.right_frame, text="Repository:")
         self.repos_combobox = ttk.Combobox(self.right_frame, 
-                                           width=87, 
+                                           width=75, 
                                            values=org_repos_names, 
                                            state="readonly")
         self.repos_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
@@ -891,7 +891,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         # Create combobox and label for branch type (Feature/Release)
         self.branch_type_label = tk.Label(self.right_frame, text="Branch type:")
         self.branch_type_combobox = ttk.Combobox(self.right_frame, 
-                                                 width=87, 
+                                                 width=75, 
                                                  values=["Features", "Release"], 
                                                  state="readonly")
         self.branch_type_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
@@ -900,7 +900,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         # Create combobox and label for teams/versions
         self.team_version_label = tk.Label(self.right_frame, text="Team:")
         self.team_version_combobox = ttk.Combobox(self.right_frame, 
-                                                  width=87, 
+                                                  width=75, 
                                                   values=self.team_names, 
                                                   state="readonly")
         self.team_version_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
@@ -914,7 +914,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         # Create combobox and label for feature versions
         self.feature_version_label = tk.Label(self.right_frame, text="Version:")
         self.feature_version_combobox = ttk.Combobox(self.right_frame, 
-                                                     width=87, 
+                                                     width=75, 
                                                      values=sorted_feature_versions, 
                                                      state="readonly")
         self.feature_version_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
@@ -929,22 +929,22 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
 
         # Creating a layout of the components
         self.left_frame.grid(row=0, column=0, sticky="s")
-        self.left_label.grid(row=0, column=0, sticky="w")
+        self.left_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
         self.submodules_left_listbox.grid(row=1, column=0)
 
         button_left.grid(row=0, column=1)
         button_right.grid(row=0, column=2)
 
         self.right_frame.grid(row=0, column=3)
-        self.repo_label.grid(row=0, column=0, sticky="w")
-        self.repos_combobox.grid(row=1, column=0)
-        self.branch_type_label.grid(row=2, column=0, sticky="w")
-        self.branch_type_combobox.grid(row=3, column=0)
-        self.team_version_label.grid(row=4, column=0, sticky="w")
-        self.team_version_combobox.grid(row=5, column=0)
-        self.feature_version_label.grid(row=6, column=0, sticky="w")
-        self.feature_version_combobox.grid(row=7, column=0)
-        self.repo_branches_right_listbox.grid(row=8, column=0)
+        self.repo_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.repos_combobox.grid(row=0, column=1, pady=(0, 5))
+        self.branch_type_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
+        self.branch_type_combobox.grid(row=1, column=1, pady=(0, 5))
+        self.team_version_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
+        self.team_version_combobox.grid(row=2, column=1, pady=(0, 5))
+        self.feature_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+        self.feature_version_combobox.grid(row=3, column=1, pady=(0, 5))
+        self.repo_branches_right_listbox.grid(row=4, column=0, columnspan=2)
 
         # Initialize current state of submodules for current org/repo/branch
         self.init_submodules_left_listbox()
