@@ -9,12 +9,14 @@ import threading
 import tkinter as tk
 from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 import tkinter.ttk as ttk
-from tkinter import simpledialog
+from tkinter import simpledialog, messagebox
 from github import Github, UnknownObjectException, GithubException
 import configparser
 import requests
 import win32cred # type: ignore
-import threading 
+import threading
+import subprocess
+
 token = ''
 GIT_HOSTNAME = 'github.com'
 
@@ -517,15 +519,28 @@ class App:
         self.branches_tree.heading("#0", text="Please wait. Refreshing data...")
         thread = threading.Thread(target=self.fetch_data)
         thread.start()
+
+    def get_full_branch_name(self, item):
+        path_parts = []
+        while item:  # Traverse upwards until we reach the root
+            node_text = self.branches_tree.item(item, "text")  # Get the text (branch name)
+            path_parts.insert(0, node_text)  # Add at the start of the list
+            parent_item = self.branches_tree.parent(item)  # Get parent item
+            item = parent_item  # Move up the tree
+        return "/".join(path_parts)
                 
     def on_right_click(self, event):
         self.menu.delete(0, 'end')  # Clear the menu
 
         item = self.branches_tree.identify('item', event.x, event.y)
 
+        branch_name = self.get_full_branch_name(item)
+        repo_path = self.repo_combo.get()
+        
         if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children) 
             self.menu.add_command(label="Create Branch", command=self.create_branch)
             self.menu.add_command(label="Delete Branch", command=self.delete_branch)
+            self.menu.add_command(label="Delete Branch with Submodules", command=lambda: self.delete_branch_with_submodules(branch_name))
             self.menu.add_command(label="Manage Submodules", command=self.manage_submodules)
             org_name = self.org_combo.get()
             repo_name = self.repo_combo.get()
@@ -567,6 +582,186 @@ class App:
             self.branches_tree.delete(selected_item)
         else:
             print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+
+
+    def delete_branch_with_submodules(self, branch_name):
+        """
+        Deletes a specified branch in the main repository and its associated submodules.
+        
+        Args:
+            branch_name (str): The name of the branch to delete.
+
+        Steps:
+            1. Validates the existence of the main repository directory.
+            2. Checks if the branch to be deleted is the currently checked-out branch.
+            3. Deletes the local branch in the main repository.
+            4. Deletes the remote branch in the main repository.
+            5. Parses the .gitmodules file to retrieve submodule information.
+            6. Deletes the specified branch in all submodules, both locally and remotely.
+            7. Refreshes the TreeView UI component after successful deletion.
+
+        Raises:
+            Displays error messages via messagebox in case of any issues during the process.
+        """
+
+        print(f"Current working directory: {os.getcwd()}")
+
+        try:
+            # Fetch organization and repository details from ComboBoxes
+            org_name = self.org_combo.get()
+            repo_name = self.repo_combo.get()
+            org_path = os.path.abspath(os.path.join("..", org_name))
+            repo_path = os.path.normpath(os.path.join(org_path, repo_name))
+
+            # Validate main repository path
+            if not os.path.exists(org_path):
+                messagebox.showerror("Error", f"Repository directory {org_path} does not exist.")
+                return
+
+            # Check current branch in the main repository
+            try:
+                current_branch = subprocess.check_output(
+                    ["git", "-C", org_path, "rev-parse", "--abbrev-ref", "HEAD"],
+                    text=True
+                ).strip()
+            except subprocess.CalledProcessError:
+                messagebox.showerror("Error", "Failed to detect the current branch.")
+                return
+
+            # Prevent deletion of the currently checked-out branch
+            if current_branch == branch_name:
+                messagebox.showerror(
+                    "Error", f"Cannot delete the currently checked-out branch: {branch_name}."
+                )
+                return
+
+            # Delete the branch locally
+            try:
+                subprocess.check_call(["git", "-C", org_path, "branch", "-D", branch_name])
+            except subprocess.CalledProcessError:
+                messagebox.showerror("Error", f"Failed to delete local branch {branch_name}.")
+                return
+
+            # Delete the branch remotely
+            try:
+                subprocess.check_call(["git", "-C", org_path, "push", "origin", "--delete", branch_name])
+            except subprocess.CalledProcessError:
+                messagebox.showerror("Error", f"Failed to delete remote branch {branch_name}.")
+                return
+
+            # Check for the presence of a .gitmodules file
+            gitmodules_path = os.path.join(org_path, ".gitmodules")
+            if not os.path.exists(gitmodules_path):
+                messagebox.showinfo("Info", "No .gitmodules file found in the repository.")
+            else:
+                # Parse .gitmodules to retrieve submodule details
+                submodules = []
+                with open(gitmodules_path, "r") as f:
+                    current_submodule = {}
+                    for line in f:
+                        if line.startswith("[submodule"):
+                            if current_submodule:
+                                submodules.append(current_submodule)
+                            current_submodule = {}
+                        elif "=" in line:
+                            key, value = map(str.strip, line.split("=", 1))
+                            current_submodule[key] = value
+                    if current_submodule:
+                        submodules.append(current_submodule)
+
+                # Delete branches in submodules
+                for submodule in submodules:
+                    submodule_path = os.path.join(repo_path, submodule.get("path", ""))
+                    branch_to_delete = submodule.get("branch", "")
+
+                    if os.path.exists(submodule_path) and branch_to_delete:
+                        # Delete branch locally in submodule
+                        try:
+                            subprocess.check_call(
+                                ["git", "-C", submodule_path, "branch", "-D", branch_to_delete]
+                            )
+                        except subprocess.CalledProcessError:
+                            messagebox.showerror(
+                                "Error",
+                                f"Failed to delete local branch {branch_to_delete} in submodule {submodule.get('path')}.",
+                            )
+                            continue
+
+                        # Delete branch remotely in submodule
+                        try:
+                            subprocess.check_call(
+                                ["git", "-C", submodule_path, "push", "origin", "--delete", branch_to_delete]
+                            )
+                        except subprocess.CalledProcessError:
+                            messagebox.showerror(
+                                "Error",
+                                f"Failed to delete remote branch {branch_to_delete} in submodule {submodule.get('path')}.",
+                            )
+                            continue
+
+            # Refresh TreeView after successful operation
+            self.update_treeview_display(org_path)
+            messagebox.showinfo("Success", "Branches deleted successfully.")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {str(e)}.")
+
+
+
+    def update_treeview_display(self, repo_path):
+        """
+        Updates the TreeView widget with the local and remote branches of the repository.
+
+        Args:
+            repo_path (str): The file path to the Git repository.
+
+        Steps:
+            1. Clears the TreeView to remove any existing items.
+            2. Fetches the list of local branches using the `git branch --list` command.
+            3. Fetches the list of remote branches using the `git branch -r --list` command.
+            4. Adds the remote branches to the TreeView widget.
+            5. Displays a success message upon completion.
+
+        Raises:
+            Displays an error message via `messagebox` in case of subprocess command failure.
+        """
+
+        try:
+            # Čišćenje Treeview pre nego što dodamo nove stavke
+            for item in self.branches_tree.get_children():
+                self.branches_tree.delete(item)
+
+            # Dohvatanje svih lokalnih grana
+            local_branches = subprocess.check_output(
+                ["git", "-C", repo_path, "branch", "--list"],
+                text=True
+            ).splitlines()
+
+            # Dohvatite sve remote grane
+            remote_branches = subprocess.check_output(
+                ["git", "-C", repo_path, "branch", "-r", "--list"],
+                text=True
+            ).splitlines()
+
+            # Dodavanje lokalne grane u Treeview
+            # for branch in local_branches:
+            #     branch_name = branch.strip()
+            #     self.branches_tree.insert("", "end", text=branch_name, values=("local",))
+
+            # Dodavanje remote grane u Treeview
+            for branch in remote_branches:
+                branch_name = branch.strip().replace("origin/", "")
+                self.branches_tree.insert("", "end", text=branch_name, values=("remote",))
+
+            # Poruka o uspehu
+            messagebox.showinfo("Success", "Treeview updated successfully!")
+
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Error", f"Failed to update Treeview: {str(e)}.")
+
+
+    
+      
     def update_github_token(self):
         token_dialog = TokenDialog(self.root)
         updated_token = token_dialog.result
