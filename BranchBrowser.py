@@ -306,6 +306,7 @@ class TreeviewTooltip:
         self.treeview.bind("<Leave>", self.on_leave)
 
     def on_left_click(self, event):
+        self.hide_tooltip()
         item = self.treeview.identify_row(event.y)
         if not item:
             self.hide_tooltip()
