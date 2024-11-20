@@ -20,15 +20,12 @@ from message_type import MessageType
 token = ''
 GIT_HOSTNAME = 'github.com'
 exceptions_handler = ExceptionsHandler()
-
 class GitHubClient:
     def __init__(self, hostname, token):
         self.github = Github(base_url=f"https://api.{hostname}", login_or_token=token)
         self.user = self.github.get_user()
-        try:
-            self.username = self.user.login # this will throw exception if token is invalid
-        except Exception as e:
-            handle_and_print_exception(e, 'Token is not valid.')
+        self.username = self.user.login # this will throw exception if token is invalid
+
     def get_username(self):
         return self.username
 
@@ -45,7 +42,7 @@ class GitHubClient:
         try:
             repos = [repo.name for repo in self.github.get_organization(org_name).get_repos()]
         except Exception as e:
-            err_desc = f"Authenticated user ('{self.username}') lacks the necessary permissions to access the list of organizations."
+            err_desc = f"Authenticated user ('{self.username}') lacks the necessary permissions to access the list of repositories for organization: {org_name}"
             handle_and_print_exception(e, err_desc)
         return repos
     
@@ -400,12 +397,6 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
     except Exception as e:
         handle_and_print_exception(e)
         # extend with sub sub module info
-        
-def read_exception_description(key):
-    with open("exceptions/exceptions_description.json", "r") as file:
-        data = json.load(file)
-    return data[key]
-
 class App:
      # Initialize the application with GitHub client, organization, and repository details
     def __init__(self, root, github_client, org, repo):
@@ -625,8 +616,7 @@ class App:
             test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) # Checking if the entered GitHub token is valid
             save_credentials("BranchBrowser", "github_token", updated_token)
         except Exception as e:
-            print(e)
-            handle_and_print_exception(e)
+            handle_and_print_exception(e, 'Token not valid.')
 
         
     def manage_submodules(self):

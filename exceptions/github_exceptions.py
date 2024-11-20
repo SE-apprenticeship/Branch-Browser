@@ -3,14 +3,14 @@ from message_type import MessageType
 
 class GithubExceptionsHandler:
     def handle(e, desc):
-        message = f"{desc} ({e.data.get('message')})"
+        message = f"{desc} ({e.data.get('message')})" if desc else ({e.data.get('message')})
         text = f"{message} (Status Code: {e.status})"
         exception_map = {
             GithubException: lambda e: (
                 MessageType.ERROR,
                 {            
-                401: f"[Status code: {e.status}] Unauthorized: Please check your credentials. {message}",
                 400: f"[Status code: {e.status}] Bad Request: Check your input. {message}",
+                401: f"[Status code: {e.status}] Unauthorized: Please check your credentials. {message}",
                 404: f"[Status code: {e.status}] Not Found: The requested resource does not exist. {message}",
                 500: f"[Status code: {e.status}] Internal Server Error: Try again later. {message}"
                 }.get(getattr(e, "status", None), f"Github Error: {text}")
@@ -19,6 +19,7 @@ class GithubExceptionsHandler:
                 MessageType.ERROR,
                 {
                 400: f"[Status code: {e.status}] Bad Request: Invalid object. {message}",
+                401: f"[Status code: {e.status}] Unauthorized: Please check your credentials. {message}",
                 404: f"[Status code: {e.status}] Not Found: The requested resource does not exist. {message}",
                 409: f"[Status code: {e.status}] Conflict: Object cannot be accessed or deleted. {message}"
                 }.get(getattr(e, "status", None), f"Github Error: {text}")
