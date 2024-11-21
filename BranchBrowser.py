@@ -1363,11 +1363,8 @@ def save_credentials(credential_name, username, password):
         'CredentialBlob': password,
         'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE
     }
-    try:
-        win32cred.CredWrite(credential)
-        print_message(MessageType.INFO, f"Credentials for '{credential_name}' saved successfully.")
-    except Exception as e:
-        handle_and_print_exception(e, 'Error while saving credentials.')
+    win32cred.CredWrite(credential)
+    print(f"Credentials for '{credential_name}' saved successfully.")
 
 def get_credentials(credential_name):
     try:
@@ -1411,11 +1408,16 @@ def main():
 
         try:
             github_client = GitHubClient(GIT_HOSTNAME, token)
-            if tokenEnteredViaTokenDialog:
+            if token_entered_via_token_dialog:
                 save_credentials("BranchBrowser", "github_token", token)
             break
         except Exception as e:
-            print("Wrong credentials. Entered token is not valid.")
+            if username and password and not token_expired:
+                token_dialog_message = "Token has expired"
+                token_expired = True
+            else:
+                token_dialog_message = "Wrong credentials. Entered token is not valid."
+            
     # Show a dialog asking for the GitHub token if not already set
     if not token:
         token_dialog = TokenDialog(root)
