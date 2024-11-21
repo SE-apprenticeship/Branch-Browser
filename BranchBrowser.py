@@ -533,21 +533,21 @@ class App:
         org_label = tk.Label(config_dialog, text="Select GitHub organization:")
         org_label.pack(anchor='w',pady=5, padx=50)
 
-        org_combobox = ttk.Combobox(config_dialog, values=organizations, width=30)
+        org_combobox = ttk.Combobox(config_dialog, values=organizations, width=30, state="readonly")
         org_combobox.set(self.default_org)  
         org_combobox.pack(anchor='w',pady=5, padx=50)
 
         repo_label = tk.Label(config_dialog, text="Select GitHub repository:")
         repo_label.pack(anchor='w',pady=5, padx=50)
 
-        repo_combobox = ttk.Combobox(config_dialog, values=[], width=30)
+        repo_combobox = ttk.Combobox(config_dialog, values=[], width=30, state="readonly")
         repo_combobox.set(self.default_repo)  
         repo_combobox.pack(anchor='w',pady=5, padx=50)
 
         team_label = tk.Label(config_dialog, text="Select team:")
         team_label.pack(anchor='w', pady=5, padx=50)
 
-        team_combobox = ttk.Combobox(config_dialog, values=[], width=30)
+        team_combobox = ttk.Combobox(config_dialog, values=[], width=30,  state="readonly")
         team_combobox.set(self.default_team) 
         team_combobox.pack(anchor='w', pady=5, padx=50)
 
@@ -1118,7 +1118,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
 
         # Dropdown for team names
         tk.Label(master, text="Select team:").grid(row=3, column=0, sticky='e') 
-        self.team_dropdown = ttk.Combobox(master, values=[], width=20)
+        self.team_dropdown = ttk.Combobox(master, values=[], width=20, state="readonly")
         self.team_dropdown.grid(row=3, column=1, sticky='w')
 
         # Populate the dropdown with team names from GitHub
