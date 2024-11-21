@@ -1411,16 +1411,19 @@ def main():
 
         try:
             github_client = GitHubClient(GIT_HOSTNAME, token)
-            if token_entered_via_token_dialog:
+            if tokenEnteredViaTokenDialog:
                 save_credentials("BranchBrowser", "github_token", token)
             break
         except Exception as e:
-            if username and password and not token_expired:
-                token_dialog_message = "Token has expired"
-                token_expired = True
-            else:
-                token_dialog_message = "Wrong credentials. Entered token is not valid."
-            
+            print("Wrong credentials. Entered token is not valid.")
+    # Show a dialog asking for the GitHub token if not already set
+    if not token:
+        token_dialog = TokenDialog(root)
+        token = token_dialog.result
+        if not token:
+            print("No token provided. Exiting...")
+            return
+
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
