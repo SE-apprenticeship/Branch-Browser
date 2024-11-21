@@ -426,51 +426,52 @@ class App:
         self.menu_bar.add_command(label="Refresh", command=self.refresh)
         
         self.root.config(menu=self.menu_bar)
-        
-        self.frame = tk.Frame(self.root, width=400)
-        self.frame.pack(side='left', fill='y')
-
-        self.vertical_scrollbar = Scrollbar(self.frame, orient=tk.VERTICAL)
+        self.treeview_frame = tk.Frame(self.root, width=300)
+        self.treeview_frame.pack_propagate(False)
+        self.treeview_frame.pack(side='left', fill='y')
+        self.vertical_scrollbar = Scrollbar(self.treeview_frame, orient=tk.VERTICAL)
         self.vertical_scrollbar.pack(side=RIGHT, fill=Y)
         
-        self.horizontal_scrollbar = Scrollbar(self.frame, orient=tk.HORIZONTAL)
+        self.horizontal_scrollbar = Scrollbar(self.treeview_frame, orient=tk.HORIZONTAL)
         self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
         
-        self.branches_tree = ttk.Treeview(self.frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
-        self.branches_tree.pack(fill='both', expand=True)
-        self.branches_tree.column("#0", width=300)
-
+        self.branches_tree = ttk.Treeview(self.treeview_frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
+        self.branches_tree.pack(fill=tk.BOTH, expand=True)
+        self.branches_tree.column("#0", stretch=False)
+        
         self.vertical_scrollbar.config(command=self.branches_tree.yview)
         self.horizontal_scrollbar.config(command=self.branches_tree.xview)
-
-        self.menu = tk.Menu(self.root, tearoff=0)
+        
+        self.contents_frame = tk.Frame(self.root)
+        self.contents_frame.pack(side='right', fill='both', expand=True)
+        self.menu = tk.Menu(self.contents_frame, tearoff=0)
 
         self.username = self.github_client.get_username()
-        self.username_label = tk.Label(self.root, text=f"Logged in as: {self.username}")
+        self.username_label = tk.Label(self.contents_frame, text=f"Logged in as: {self.username}")
         self.username_label.pack(side='top', fill='x')
 
 
         self.orgs = self.github_client.get_organizations_names()
-        self.org_label = tk.Label(self.root, text="Organization:")
+        self.org_label = tk.Label(self.contents_frame, text="Organization:")
         self.org_label.pack(side='top', fill='x')
-        self.org_combo = ttk.Combobox(self.root, values=self.orgs)
+        self.org_combo = ttk.Combobox(self.contents_frame, values=self.orgs)
         self.org_combo['state'] = 'readonly'
         self.org_combo.pack(side='top', fill='x')
 
-        self.repo_label = tk.Label(self.root, text="Repository:")
+        self.repo_label = tk.Label(self.contents_frame, text="Repository:")
         self.repo_label.pack(side='top', fill='x')
-        self.repo_combo = ttk.Combobox(self.root)
+        self.repo_combo = ttk.Combobox(self.contents_frame)
         self.repo_combo['state'] = 'readonly'
         self.repo_combo.pack(side='top', fill='x')
 
         # Initialize the tooltip functionality for the treeview
         TreeviewTooltip(self.github_client, self.org_combo, self.repo_combo, self.branches_tree, tooltip_text)
 
-        self.log_label = tk.Label(self.root, text="Log:")
+        self.log_label = tk.Label(self.contents_frame, text="Log:")
         self.log_label.pack(side='top', fill='x')
-        log_text = tk.Text(self.root, state='disabled')  # Create a Text widget
+        log_text = tk.Text(self.contents_frame, state='disabled')  # Create a Text widget
 
-        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=log_text.yview)
+        self.vertical_log_scrollbar = Scrollbar(self.contents_frame, orient=tk.VERTICAL, command=log_text.yview)
         self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
         
         log_text.pack(side='top', fill='both', expand=True)
@@ -482,6 +483,7 @@ class App:
         log_text.tag_configure("info", foreground="black", font=("Consolas", 10, "bold"))
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(log_text)
+
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
@@ -510,10 +512,14 @@ class App:
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
-        
         self.clear_branches_tree()
-        self.branches_tree.heading("#0", text=f'Branches on {org_name}/{repo_name}')
+        
+        heading_text=f'Branches on {self.org_combo.get()}/{self.repo_combo.get()}'
+        self.branches_tree.heading("#0", text = heading_text, anchor=tk.W)
+        text_width = tk.font.Font().measure(heading_text)
+        self.branches_tree.column("#0", width=text_width, stretch=False)
         self.populate_tree(self.branches_tree, branches_structure)
+
 
     def clear_branches_tree(self):
         self.branches_tree.delete(*self.branches_tree.get_children())
@@ -555,7 +561,7 @@ class App:
          
     def refresh(self):
         self.clear_branches_tree()
-        self.branches_tree.heading("#0", text="Please wait. Refreshing data...")
+        self.branches_tree.heading("#0", text="Please wait. Refreshing data...", anchor=tk.W)
         thread = threading.Thread(target=self.fetch_data)
         thread.start()
                 
