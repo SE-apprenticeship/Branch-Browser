@@ -301,12 +301,14 @@ class TreeviewTooltip:
         self.repo_combo = repo_combo
         self.treeview = treeview
         self.tooltip_func = tooltip_func
+        self.tooltip_opened = False
         self.tip_window = None
         self.treeview.bind("<Button-1>", self.on_left_click)
         self.treeview.bind("<Leave>", self.on_leave)
 
     def on_left_click(self, event):
-        self.hide_tooltip()
+        if self.tooltip_opened:
+            self.hide_tooltip()
         item = self.treeview.identify_row(event.y)
         if not item:
             self.hide_tooltip()
@@ -328,6 +330,7 @@ class TreeviewTooltip:
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
         if text:
+            self.tooltip_opened = True
             self.tip_window = tw = tk.Toplevel(self.treeview)
             tw.wm_overrideredirect(True)
             tw.wm_geometry(f"+{x+20+self.treeview.winfo_rootx()}+{y+10+self.treeview.winfo_rooty()}")
@@ -336,6 +339,7 @@ class TreeviewTooltip:
 
     def hide_tooltip(self):
         if self.tip_window:
+            self.tooltip_opened = False
             self.tip_window.destroy()
             self.tip_window = None
 
