@@ -1,5 +1,6 @@
 {
     "default_organization": "StudentTestOrganization1",
     "default_repository": "StudentTestOrganization1",
+    "default_team": "team3",
     "GIT_HOSTNAME": "github.com"
 }

@@ -9,6 +9,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
+from tkinter import messagebox
 import tkinter.ttk as ttk
 from tkinter import simpledialog
 from github import Github, RateLimitExceededException, UnknownObjectException
@@ -403,15 +404,17 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
         # extend with sub sub module info
 class App:
     # Initialize the application with GitHub client, organization, and repository details
-    def __init__(self, root, github_client, org, repo, credentials_saved):
+    def __init__(self, root, github_client, org, repo, credentials_saved, config_path, team):
         self.root = root
         self.github_client = github_client
         self.default_org = org
         self.default_repo = repo
+        self.default_team = team
         self.last_tree_item_rightclicked = None
         self.setup_ui()
         self.setup_actions()
         self.username = self.github_client.get_username()
+        self.config_path = config_path
         print_message(MessageType.INFO, f'Connected to GitHub with user: {self.username}.')
         print_message(MessageType.INFO, f'Using organization: {self.default_org}, repository: {self.default_repo}')
         if credentials_saved:
@@ -424,7 +427,8 @@ class App:
         self.github_token_menu.add_command(label="Update GitHub token", command=self.update_github_token)
         self.menu_bar.add_cascade(label="GitHub token", menu=self.github_token_menu)
         self.menu_bar.add_command(label="Refresh", command=self.refresh)
-        
+        self.menu_bar.add_command(label="Edit config", command=self.open_config_dialog)
+
         self.root.config(menu=self.menu_bar)
         self.treeview_frame = tk.Frame(self.root, width=300)
         self.treeview_frame.pack_propagate(False)
@@ -442,7 +446,9 @@ class App:
         self.vertical_scrollbar.config(command=self.branches_tree.yview)
         self.horizontal_scrollbar.config(command=self.branches_tree.xview)
         
-        self.menu = tk.Menu(self.root, tearoff=0)
+        self.contents_frame = tk.Frame(self.root)
+        self.contents_frame.pack(side='right', fill='both', expand=True)
+        self.menu = tk.Menu(self.contents_frame, tearoff=0)
 
         self.username = self.github_client.get_username()
         self.username_label = tk.Label(self.contents_frame, text=f"Logged in as: {self.username}")
@@ -467,9 +473,9 @@ class App:
 
         self.log_label = tk.Label(self.contents_frame, text="Log:")
         self.log_label.pack(side='top', fill='x')
-        text = tk.Text(self.root, state='disabled')  # Create a Text widget
-        
-        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=text.yview)
+        log_text = tk.Text(self.contents_frame, state='disabled')  # Create a Text widget
+
+        self.vertical_log_scrollbar = Scrollbar(self.contents_frame, orient=tk.VERTICAL, command=log_text.yview)
         self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
         
         log_text.pack(side='top', fill='both', expand=True)
@@ -480,7 +486,7 @@ class App:
         log_text.tag_configure("warning", foreground="orange", font=("Consolas", 10, "bold"))
         log_text.tag_configure("info", foreground="black", font=("Consolas", 10, "bold"))
         # Redirect stdout to the Text widget
-        sys.stdout = TextHandler(text)
+        sys.stdout = TextHandler(log_text)
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
@@ -550,7 +556,168 @@ class App:
     # Refresh tree view with branches from the selected repository
     def update_tree(self, event):
         self.refresh_branches_by_config()
-    
+
+    # Opens a configuration dialog for selecting organization, repository, and hostname.
+    def open_config_dialog(self):
+        config_dialog = tk.Toplevel(self.root)
+        config_dialog.title("Edit Configuration")
+
+        dialog_width = 300
+        dialog_height = 300
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        position_top = int(screen_height / 2 - dialog_height / 2)
+        position_left = int(screen_width / 2 - dialog_width / 2)
+
+        config_dialog.geometry(f'{dialog_width}x{dialog_height}+{position_left}+{position_top}')
+
+        organizations = self.github_client.get_organizations_names()  
+        if not organizations:
+            messagebox.showwarning("No Organizations", "No organizations found.")
+            return
+
+        org_label = tk.Label(config_dialog, text="Select GitHub organization:")
+        org_label.pack(anchor='w',pady=5, padx=50)
+
+        org_combobox = ttk.Combobox(config_dialog, values=organizations, width=30, state="readonly")
+        org_combobox.set(self.default_org)  
+        org_combobox.pack(anchor='w',pady=5, padx=50)
+
+        repo_label = tk.Label(config_dialog, text="Select GitHub repository:")
+        repo_label.pack(anchor='w',pady=5, padx=50)
+
+        repo_combobox = ttk.Combobox(config_dialog, values=[], width=30, state="readonly")
+        repo_combobox.set(self.default_repo)  
+        repo_combobox.pack(anchor='w',pady=5, padx=50)
+
+        team_label = tk.Label(config_dialog, text="Select team:")
+        team_label.pack(anchor='w', pady=5, padx=50)
+
+        team_combobox = ttk.Combobox(config_dialog, values=[], width=30,  state="readonly")
+        team_combobox.set(self.default_team) 
+        team_combobox.pack(anchor='w', pady=5, padx=50)
+
+        git_hostname_label = tk.Label(config_dialog, text="Enter GitHub hostname:")
+        git_hostname_label.pack(anchor='w',pady=5, padx=50)
+
+        git_hostname_entry = tk.Entry(config_dialog, width=40)
+        git_hostname_entry.insert(0, 'github.com')  
+        git_hostname_entry.pack(anchor='w',pady=5, padx=50)
+        
+        def load_repos_and_teams(org_name, repo_combobox, team_combobox):
+            repositories = self.github_client.get_organization_repos_names(org_name)
+            if not repositories:
+                messagebox.showwarning("No Repositories", "No repositories found for the selected organization.")
+                return
+            repo_combobox['values'] = repositories
+            repo_combobox.set(self.default_repo) 
+            
+            teams = self.github_client.get_organization_teams(org_name)
+            if not teams:
+                messagebox.showwarning("No Teams", "No teams found for the selected organization.")
+                return
+            team_combobox['values'] = teams
+            if self.default_team and self.default_team in teams:
+                team_combobox.set(self.default_team)
+            else:
+                team_combobox.set(teams[0])  # Set to the first available team if default is not found
+
+        def on_org_select(event):
+            selected_org = org_combobox.get()
+            load_repos_and_teams(selected_org, repo_combobox, team_combobox)
+
+        org_combobox.bind("<<ComboboxSelected>>", on_org_select)
+
+        # Initialize repositories and teams for the default organization on dialog open
+        load_repos_and_teams(self.default_org, repo_combobox, team_combobox)
+
+        def on_save():
+            new_org = org_combobox.get()
+            new_repo = repo_combobox.get()
+            new_team = team_combobox.get()
+            new_git_hostname = git_hostname_entry.get()
+
+            if all([new_org, new_repo, new_git_hostname, new_team]):
+                config = {
+                    'default_organization': new_org,
+                    'default_repository': new_repo,
+                    'default_team': new_team,
+                    'GIT_HOSTNAME': new_git_hostname
+                }
+
+                self.save_config(config)
+                self.default_team = new_team
+                messagebox.showinfo("Success", "Configuration updated and saved.")
+                self.update_main_display(new_org, new_repo, new_team)
+                self.refresh_branches_by_config()
+                config_dialog.destroy()
+            else:
+                messagebox.showwarning("Input Error", "All fields must be provided.")
+
+        save_button = tk.Button(config_dialog, text="Save", command=on_save)
+        save_button.pack(side='left', pady=10, padx=50)
+
+        def on_cancel():
+            print("Configuration editing canceled")
+            config_dialog.destroy()
+
+        cancel_button = tk.Button(config_dialog, text="Cancel", command=on_cancel)
+        cancel_button.pack(side='right',pady=10,padx=50)
+
+    # Load configuration settings from 'config.json', or use defaults if file is missing or invalid
+    @staticmethod
+    def load_config():
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        if not os.path.exists(config_path):
+            print(f"Config file {config_path} not found. Using default values.")
+            return None
+        
+        try:
+            with open(config_path, "r") as config_file:
+                config = json.load(config_file)
+                return config
+        except json.JSONDecodeError:
+            print(f"Error decoding JSON from config file {config_path}. Using default values.")
+            return None  
+        except IOError as e:
+            print(f"IOError: {e} - There was an issue accessing the file {config_path}.")
+            return None
+        except Exception as e:
+            print(f"Unexpected error loading config: {e}")
+            return None
+        except FileNotFoundError:
+            print(f"Config file {config_path} not found. Using default values.")
+            return None
+          
+    # Saves the provided configuration data to a file     
+    def save_config(self, config):
+        try:
+            with open(self.config_path, "w") as config_file:
+                json.dump(config, config_file, indent=4)
+            print(f"Config saved to {self.config_path}")
+        except TypeError as e:
+            print(f"TypeError: {e} - The object is not serializable to JSON.")
+        except IOError as e:
+            print(f"IOError: {e} - There was an issue with the file {self.config_path}.")
+        except ValueError as e:
+            print(f"ValueError: {e} - The data is not valid for JSON serialization.")
+        except json.JSONDecodeError as e:
+            print(f"JSONDecodeError: {e} - There was an error decoding the JSON data.")
+        except Exception as e:
+            print(f"Unexpected error saving config: {e}")
+            
+    # Updates the main display with new organization and repository settings        
+    def update_main_display(self, new_org, new_repo, team): 
+        self.default_org = new_org
+        self.default_repo = new_repo
+
+        self.org_combo['values'] = self.github_client.get_organizations_names()
+        self.repo_combo['values'] = self.github_client.get_organization_repos_names(self.default_org)
+
+        self.org_combo.set(self.default_org)
+        self.repo_combo.set(self.default_repo)
+        print(f'Using organization: {self.default_org}, repository: {self.default_repo}, team: {team}') 
+            
     def fetch_data(self):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
@@ -634,10 +801,11 @@ class App:
     def manage_submodules(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
+        team_names = self.github_client.get_organization_teams(org_name)
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
         print_message(MessageType.INFO, f"Manage submodules for {branch_name} on {org_name}/{repo_name}...")
-        SubmoduleSelectorDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
+        SubmoduleSelectorDialog(self.root, self.github_client, org_name, repo_name, team_names, branch_name, self.update_tree)
 
     
     def create_feature_branch(self):
@@ -646,7 +814,7 @@ class App:
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
         print_message(MessageType.INFO, f"Create feature branch for {branch_name} on {org_name}/{repo_name}...")
-        CreateFeatureBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
+        CreateFeatureBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree, self.config_path)
 
     def create_release_branch(self):
         org_name = self.org_combo.get()
@@ -774,13 +942,14 @@ class RepoBranchListBoxInfo:
 
 
 class SubmoduleSelectorDialog(simpledialog.Dialog):
-    def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree):
+    def __init__(self, parent, github_client, org_name, repo_name, team_names, branch_name, update_tree):
         self.repo_branch_right_lb_info_map = dict()
         self.repo_branch_left_lb_info_list = list()
 
         self.github_client = github_client
         self.org_name = org_name
         self.repo_name = repo_name
+        self.team_names = team_names
         self.branch_name = branch_name
         self.update_tree = update_tree
 
@@ -809,19 +978,76 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
                 repo_branch_lb_info.set_used(True)
                 self.submodules_left_listbox.insert(tk.END, selected_item)
 
+
+    def extract_feature_versions(self, team_name):
+        filtered_branches = [branch for branch in self.branches if branch.startswith(f"Features/{team_name}")]
+        feature_versions = list({branch.split("/")[-2] for branch in filtered_branches})
+        sorted_feature_versions = sorted(feature_versions, key=lambda v: float(v))
+        return sorted_feature_versions
+
     def update_repo_branches_right_listbox(self, event = None):
+        # Get the selected values of the repo name and branch type comboboxes
+        repo_name = self.repos_combobox.get()
+        branch_type = self.branch_type_combobox.get()
+
+        if event and event.widget == self.repos_combobox:
+            self.branches = self.github_client.get_organization_repo_branches(self.org_name, repo_name)
+        elif event and event.widget == self.branch_type_combobox and branch_type == "Release":
+            # Changing the text of the team/version label to "Version:"
+            self.team_version_label.config(text="Version:")
+
+            # Getting only the release branches
+            release_branches = [branch for branch in self.branches if branch.startswith("Release")]
+            # Getting the versions such as 1.0, 2.0 etc.
+            versions = list({branch.split("/")[1] for branch in release_branches})
+            # Sorting the versions by their numerical value
+            sorted_versions = sorted(versions, key=lambda v: float(v))
+            # Setting the extracted versions as the values for the team/version combobox
+            self.team_version_combobox['values'] = sorted_versions
+            self.team_version_combobox.current(0)
+
+            # Removing the feature version label and combobox from the UI
+            self.feature_version_label.grid_forget()
+            self.feature_version_combobox.grid_forget()
+        elif event and event.widget == self.branch_type_combobox and branch_type == "Features":
+            # Changing the text of the team/version label to "Team:"
+            self.team_version_label.config(text="Team:")
+            
+            # Setting the team names to be values for the team/version combobox
+            self.team_version_combobox['values'] = self.team_names
+            self.team_version_combobox.current(0)
+
+            # Adding the feature version label and combobox back to the UI
+            self.feature_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+            self.feature_version_combobox.grid(row=3, column=1, pady=(0, 5))
+
         self.repo_branch_right_lb_info_map.clear()
 
-        # Get the selected value of the repo name combobox
-        repo_name = self.repos_combobox.get()
+        # Get the selected value of the team/version combobox
+        team_version = self.team_version_combobox.get()
+
+        # If any combobox other than feature version combobox changes and we are looking at feature branches
+        # it should update the feature version combobox with the appropriate values
+        if event and event.widget != self.feature_version_combobox and branch_type == "Features":
+            sorted_feature_versions = self.extract_feature_versions(team_version)
+            self.feature_version_combobox['values'] = sorted_feature_versions
+            if len(sorted_feature_versions) > 0:
+                self.feature_version_combobox.current(0)
+            else:
+                self.feature_version_combobox.set("")
 
         # Clear the listbox
         self.repo_branches_right_listbox.delete(0, tk.END)
 
-        branches = self.github_client.get_organization_repo_branches(self.org_name, repo_name)
+        filtered_branches = [branch for branch in self.branches if branch.startswith(f"{branch_type}/{team_version}")]
+        # If showing feature branches filter by feature version too
+        if branch_type == "Features":
+            # Get the selected value of the feature version combobox
+            feature_version = self.feature_version_combobox.get()
+            filtered_branches = [branch for branch in filtered_branches if feature_version in branch]
 
-        # Update the repo branches right listbox based on the repo name selected value
-        for index, branch in enumerate(branches):
+        # Update the repo branches right listbox based on the selected values of the comboboxes
+        for index, branch in enumerate(filtered_branches):
             repo_branch_lb_info = RepoBranchListBoxInfo(repo_name, branch, listbox_position=index)
             repo_branch_lb_info.set_used(str(repo_branch_lb_info) in self.submodules_left_listbox.get(0, tk.END))
             self.repo_branch_right_lb_info_map[str(repo_branch_lb_info)] = repo_branch_lb_info
@@ -874,13 +1100,49 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
 
         org_repos_names = self.github_client.get_organization_repos_names(self.org_name)
         org_repos_names.remove(self.repo_name)
+        org_repos_names.sort()
 
-        # Create combobox
-        self.repos_combobox = ttk.Combobox(self.right_frame, width=87, values=org_repos_names)
-        self.repos_combobox['state'] = 'readonly'
+        # Create combobox and label for repos names
+        self.repo_label = tk.Label(self.right_frame, text="Repository:")
+        self.repos_combobox = ttk.Combobox(self.right_frame, 
+                                           width=75, 
+                                           values=org_repos_names, 
+                                           state="readonly")
         self.repos_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
         # Set the first item as selected
         self.repos_combobox.current(0)
+
+        # Create combobox and label for branch type (Feature/Release)
+        self.branch_type_label = tk.Label(self.right_frame, text="Branch type:")
+        self.branch_type_combobox = ttk.Combobox(self.right_frame, 
+                                                 width=75, 
+                                                 values=["Features", "Release"], 
+                                                 state="readonly")
+        self.branch_type_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
+        self.branch_type_combobox.current(0)
+
+        # Create combobox and label for teams/versions
+        self.team_version_label = tk.Label(self.right_frame, text="Team:")
+        self.team_version_combobox = ttk.Combobox(self.right_frame, 
+                                                  width=75, 
+                                                  values=self.team_names, 
+                                                  state="readonly")
+        self.team_version_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
+        self.team_version_combobox.current(0)
+
+        # Setting the initial value for branches
+        self.branches = self.github_client.get_organization_repo_branches(self.org_name, self.repos_combobox.get())
+        # Setting the initial values for the feature versions combobox
+        sorted_feature_versions = self.extract_feature_versions(self.team_version_combobox.get())
+
+        # Create combobox and label for feature versions
+        self.feature_version_label = tk.Label(self.right_frame, text="Version:")
+        self.feature_version_combobox = ttk.Combobox(self.right_frame, 
+                                                     width=75, 
+                                                     values=sorted_feature_versions, 
+                                                     state="readonly")
+        self.feature_version_combobox.bind('<<ComboboxSelected>>', self.update_repo_branches_right_listbox)
+        self.feature_version_combobox.current(0)
 
         # Create right listbox
         self.repo_branches_right_listbox = tk.Listbox(self.right_frame, width=90, height=40)
@@ -889,17 +1151,24 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         button_right = tk.Button(master, text=">", command=self.move_to_right)
         button_left = tk.Button(master, text="<", command=self.move_to_left)
 
-        # Pack widgets
-        self.left_frame.pack(side=tk.LEFT)
-        self.left_label.pack()
-        self.submodules_left_listbox.pack()
+        # Creating a layout of the components
+        self.left_frame.grid(row=0, column=0, sticky="s")
+        self.left_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.submodules_left_listbox.grid(row=1, column=0)
 
-        button_left.pack(side=tk.LEFT)
-        button_right.pack(side=tk.LEFT)
+        button_left.grid(row=0, column=1)
+        button_right.grid(row=0, column=2)
 
-        self.right_frame.pack(side=tk.LEFT)
-        self.repos_combobox.pack()
-        self.repo_branches_right_listbox.pack()
+        self.right_frame.grid(row=0, column=3)
+        self.repo_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.repos_combobox.grid(row=0, column=1, pady=(0, 5))
+        self.branch_type_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
+        self.branch_type_combobox.grid(row=1, column=1, pady=(0, 5))
+        self.team_version_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
+        self.team_version_combobox.grid(row=2, column=1, pady=(0, 5))
+        self.feature_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+        self.feature_version_combobox.grid(row=3, column=1, pady=(0, 5))
+        self.repo_branches_right_listbox.grid(row=4, column=0, columnspan=2)
 
         # Initialize current state of submodules for current org/repo/branch
         self.init_submodules_left_listbox()
@@ -958,7 +1227,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
             self.processing_popup.destroy()
             
 class CreateFeatureBranchDialog(simpledialog.Dialog):
-    def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree):
+    def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree, config_path):
 
         self.github_client = github_client
         self.org_name = org_name
@@ -966,9 +1235,23 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.branch_name = branch_name
         self.update_tree = update_tree
 
+        if isinstance(config_path, str):
+            try:
+                with open(config_path, 'r') as file:
+                    self.config = json.load(file)
+            except IOError:
+                print("Error: There was an issue reading the file.")
+            except json.JSONDecodeError:
+                print("Error: The file is not a valid JSON.")
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+        else:
+            self.config = config_path
+
         self.include_push = tk.BooleanVar(value=True) 
         # StringVar to hold the real-time preview of the path
         self.path_preview = tk.StringVar()
+        self.default_team = self.config.get("default_team", "")
         # Call the superclass's __init__ method
         super().__init__(parent)
 
@@ -990,7 +1273,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
 
         # Dropdown for team names
         tk.Label(master, text="Select team:").grid(row=3, column=0, sticky='e') 
-        self.team_dropdown = ttk.Combobox(master, values=[], width=20)
+        self.team_dropdown = ttk.Combobox(master, values=[], width=57, state="readonly")
         self.team_dropdown.grid(row=3, column=1, sticky='w')
 
         # Populate the dropdown with team names from GitHub
@@ -1004,19 +1287,26 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
 
         # Editable entry for "Feature-Bug"
         tk.Label(master, text="Feature/Bug description:").grid(row=5, column=0, sticky='e')
-        self.feature_bug_entry = tk.Entry(master, width=20)
+        self.feature_bug_entry = tk.Entry(master, width=60)
         self.feature_bug_entry.insert(0, "Feature-Bug")  # Default text
         self.feature_bug_entry.grid(row=5, column=1, sticky='w')
 
         # Preview label to display the real-time generated path
-        tk.Label(master, text="Feature path preview:").grid(row=6, column=0, sticky='e')
+        tk.Label(master, text="Feature path preview:").grid(row=7, column=0, sticky='e')
         self.replace_feature_branch_prefix = tk.Entry(master, textvariable=self.path_preview, fg="blue",width=60, state="readonly")
-        self.replace_feature_branch_prefix.grid(row=6, column=1, sticky='w')
+        self.replace_feature_branch_prefix.grid(row=7, column=1, sticky='w')
 
         # Set up listeners to update the preview when fields change
         self.team_dropdown.bind("<<ComboboxSelected>>", lambda event: self.update_path_preview())
         self.feature_bug_entry.bind("<KeyRelease>", lambda event: self.update_path_preview())
         self.push_checkbox.config(command=self.update_path_preview)
+
+        # Message to show when a space is entered
+        self.space_warning = tk.Label(master, text="", fg="red")
+        self.space_warning.grid(row=6, column=1, sticky='w')
+
+        # Validation for the feature_bug_entry field
+        self.feature_bug_entry.bind("<KeyRelease>", self.validate_no_space)
 
         # Initial preview setup
         self.update_path_preview()
@@ -1024,19 +1314,33 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         # get submodules info - only 1st level
         self.submodules_info = get_submodules_info(self.github_client, self.org_name, self.repo_name, self.branch_name)
 
-        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=7, sticky='w')
+        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=8, sticky='w')
 
         submodules_hierarchy_string = f"R:{self.repo_name} B:{self.branch_name}\n" + build_hierarchy(self.submodules_info, format_output, get_sublist)
 
-        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=8, sticky='w')
-   
+        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=9, sticky='w')
+    
+    def validate_no_space(self, event):
+        text = self.feature_bug_entry.get()
+        
+        # If there's a space in the text, highlight the entry and show the warning
+        if ' ' in text:
+            self.feature_bug_entry.config(bg="red")
+            self.space_warning.config(text="Spaces are not allowed!")
+        else:
+            self.feature_bug_entry.config(bg="white")
+            self.space_warning.config(text="")  # Clear the warning message when valid
+        self.update_path_preview()
+        
     # Use the GitHubClient to get team names for the organization
     def populate_team_dropdown(self):
         try:
             team_names = self.github_client.get_organization_teams(self.org_name)
             self.team_dropdown['values'] = team_names or []
-            if team_names:
-                self.team_dropdown.set(team_names[0]) 
+            if self.default_team in team_names:
+                    self.team_dropdown.set(self.default_team)
+            else:
+                    self.team_dropdown.set(team_names[0]) 
         except Exception as e:
             print(f"Error fetching team names: {e}")
             self.team_dropdown['values'] = []
@@ -1432,10 +1736,15 @@ def main():
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
-    
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
     try:
-        config = load_config()
-        git_hostname = config.get("GIT_HOSTNAME", "github.com")
+        config = App.load_config()
+        if config is None:
+            print("Configuration loading failed. Exiting...")
+            return
+        
+        default_team = config.get("default_team") if config else "default_team"
+        git_hostname = config.get("GIT_HOSTNAME", "github.com") if config else GIT_HOSTNAME
         # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(git_hostname, token)
         # Load configuration and get default organization/repository
@@ -1451,7 +1760,11 @@ def main():
         available_repositories = github_client.get_organization_repos_names(app_org)
         app_repo = select_default_or_first(default_repo, available_repositories, "repository")
 
-        app = App(root, github_client, app_org, app_repo, token_entered_via_token_dialog)  
+        # Get list of available teams for the selected organization (optional, if required)
+        available_teams = github_client.get_organization_teams(app_org) 
+        app_team = select_default_or_first(default_team, available_teams, "team")
+
+        app = App(root, github_client, app_org, app_repo, token_entered_via_token_dialog, config_path, app_team)  #, app_team
 
         # Populate combo boxes with available organizations and repositories
         app.org_combo['values'] = available_organizations
