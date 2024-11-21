@@ -794,8 +794,8 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
             self.team_version_combobox.current(0)
 
             # Adding the feature version label and combobox back to the UI
-            self.feature_version_label.grid(row=6, column=0, sticky="w")
-            self.feature_version_combobox.grid(row=7, column=0)
+            self.feature_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+            self.feature_version_combobox.grid(row=3, column=1, pady=(0, 5))
 
         self.repo_branch_right_lb_info_map.clear()
 
