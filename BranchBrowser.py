@@ -591,7 +591,7 @@ class App:
             new_team = team_combobox.get()
             new_git_hostname = git_hostname_entry.get()
 
-            if new_org and new_repo and new_git_hostname and new_team:
+            if all([new_org, new_repo, new_git_hostname, new_team]):
                 config = {
                     'default_organization': new_org,
                     'default_repository': new_repo,
@@ -1087,9 +1087,12 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
             try:
                 with open(config_path, 'r') as file:
                     self.config = json.load(file)
+            except IOError:
+                print("Error: There was an issue reading the file.")
+            except json.JSONDecodeError:
+                print("Error: The file is not a valid JSON.")
             except Exception as e:
-                print(f"Error loading configuration file: {e}")
-                self.config = {}
+                print(f"An unexpected error occurred: {e}")
         else:
             self.config = config_path
 
@@ -1118,7 +1121,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
 
         # Dropdown for team names
         tk.Label(master, text="Select team:").grid(row=3, column=0, sticky='e') 
-        self.team_dropdown = ttk.Combobox(master, values=[], width=20, state="readonly")
+        self.team_dropdown = ttk.Combobox(master, values=[], width=57, state="readonly")
         self.team_dropdown.grid(row=3, column=1, sticky='w')
 
         # Populate the dropdown with team names from GitHub
@@ -1132,7 +1135,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
 
         # Editable entry for "Feature-Bug"
         tk.Label(master, text="Feature/Bug description:").grid(row=5, column=0, sticky='e')
-        self.feature_bug_entry = tk.Entry(master, width=20)
+        self.feature_bug_entry = tk.Entry(master, width=60)
         self.feature_bug_entry.insert(0, "Feature-Bug")  # Default text
         self.feature_bug_entry.grid(row=5, column=1, sticky='w')
 
