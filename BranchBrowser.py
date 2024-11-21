@@ -442,9 +442,7 @@ class App:
         self.vertical_scrollbar.config(command=self.branches_tree.yview)
         self.horizontal_scrollbar.config(command=self.branches_tree.xview)
         
-        self.contents_frame = tk.Frame(self.root)
-        self.contents_frame.pack(side='right', fill='both', expand=True)
-        self.menu = tk.Menu(self.contents_frame, tearoff=0)
+        self.menu = tk.Menu(self.root, tearoff=0)
 
         self.username = self.github_client.get_username()
         self.username_label = tk.Label(self.contents_frame, text=f"Logged in as: {self.username}")
@@ -469,9 +467,9 @@ class App:
 
         self.log_label = tk.Label(self.contents_frame, text="Log:")
         self.log_label.pack(side='top', fill='x')
-        log_text = tk.Text(self.contents_frame, state='disabled')  # Create a Text widget
-
-        self.vertical_log_scrollbar = Scrollbar(self.contents_frame, orient=tk.VERTICAL, command=log_text.yview)
+        text = tk.Text(self.root, state='disabled')  # Create a Text widget
+        
+        self.vertical_log_scrollbar = Scrollbar(self.root, orient=tk.VERTICAL, command=text.yview)
         self.vertical_log_scrollbar.pack(side=RIGHT, fill=Y)
         
         log_text.pack(side='top', fill='both', expand=True)
@@ -482,8 +480,7 @@ class App:
         log_text.tag_configure("warning", foreground="orange", font=("Consolas", 10, "bold"))
         log_text.tag_configure("info", foreground="black", font=("Consolas", 10, "bold"))
         # Redirect stdout to the Text widget
-        sys.stdout = TextHandler(log_text)
-
+        sys.stdout = TextHandler(text)
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
@@ -614,7 +611,7 @@ class App:
         result = DeleteDialog(self.root, self.github_client, org_name, repo_name, branch_name).result
         # Check the result
         if result:
-            print(f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
+            print_message(MessageType.INFO, f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
             self.branches_tree.delete(selected_item)
         else:
             message = f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!"
