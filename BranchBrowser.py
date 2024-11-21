@@ -683,7 +683,7 @@ class App:
         self.repo_combo.set(self.default_repo)
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}, team: {team}') 
             
-    def fetch_data(self, label, event):
+    def fetch_data(self):
         self.update_repos(None)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
