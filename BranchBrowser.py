@@ -16,6 +16,7 @@ import requests
 import win32cred # type: ignore
 import threading
 import subprocess
+from delete_with_submodules_dialog import DeleteWithSubmodulesDialog
 
 token = ''
 GIT_HOSTNAME = 'github.com'
@@ -369,7 +370,7 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
 
 class App:
     # Initialize the application with GitHub client, organization, and repository details
-    def __init__(self, root, github_client, org, repo, credentials_saved):
+    def __init__(self, root, github_client, org, repo, credentials_saved, github):
         self.root = root
         self.github_client = github_client
         self.default_org = org
@@ -382,6 +383,7 @@ class App:
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
         if credentials_saved:
             print("Credentials for 'BranchBrowser' have been saved successfully.")
+        self.github = github
 
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
@@ -587,181 +589,67 @@ class App:
     def delete_branch_with_submodules(self, branch_name):
         """
         Deletes a specified branch in the main repository and its associated submodules.
-        
+
         Args:
             branch_name (str): The name of the branch to delete.
 
         Steps:
-            1. Validates the existence of the main repository directory.
-            2. Checks if the branch to be deleted is the currently checked-out branch.
-            3. Deletes the local branch in the main repository.
-            4. Deletes the remote branch in the main repository.
-            5. Parses the .gitmodules file to retrieve submodule information.
-            6. Deletes the specified branch in all submodules, both locally and remotely.
-            7. Refreshes the TreeView UI component after successful deletion.
+            1. Fetches the .gitmodules file from the specified remote branch.
+            2. Parses the .gitmodules file to retrieve submodule information.
+            3. Deletes the specified branch in the main repository and submodules via GitHub API.
+            4. Refreshes the TreeView UI component after successful deletion.
 
         Raises:
             Displays error messages via messagebox in case of any issues during the process.
         """
-
-        print(f"Current working directory: {os.getcwd()}")
-
         try:
             # Fetch organization and repository details from ComboBoxes
             org_name = self.org_combo.get()
             repo_name = self.repo_combo.get()
-            org_path = os.path.abspath(os.path.join("..", org_name))
-            repo_path = os.path.normpath(os.path.join(org_path, repo_name))
 
-            # Validate main repository path
-            if not os.path.exists(org_path):
-                messagebox.showerror("Error", f"Repository directory {org_path} does not exist.")
-                return
-
-            # Check current branch in the main repository
+             # Fetch the .gitmodules file content from the remote branch
             try:
-                current_branch = subprocess.check_output(
-                    ["git", "-C", org_path, "rev-parse", "--abbrev-ref", "HEAD"],
-                    text=True
-                ).strip()
-            except subprocess.CalledProcessError:
-                messagebox.showerror("Error", "Failed to detect the current branch.")
+                file_content = self.github.get_organization(org_name).get_repo(repo_name).get_contents('.gitmodules', ref=branch_name)
+                decoded_content = base64.b64decode(file_content.content).decode('utf-8')
+                print(".gitmodules content successfully fetched:")
+                print(decoded_content)
+            except subprocess.CalledProcessError as e:
+                print(f"Error fetching .gitmodules: {e}")
+                print(f"Git command stderr: {e.stderr if hasattr(e, 'stderr') else 'N/A'}")
+                messagebox.showinfo("Info", "No .gitmodules file found on the remote branch.")
                 return
 
-            # Prevent deletion of the currently checked-out branch
-            if current_branch == branch_name:
-                messagebox.showerror(
-                    "Error", f"Cannot delete the currently checked-out branch: {branch_name}."
-                )
-                return
+            # Parse .gitmodules to retrieve submodule details
+            submodules = []
+            if decoded_content:
+                current_submodule = {}
+                for line in decoded_content.splitlines():
+                    if line.startswith("[submodule"):
+                        if current_submodule:
+                            submodules.append(current_submodule)
+                        current_submodule = {}
+                    elif "=" in line:
+                        key, value = map(str.strip, line.split("=", 1))
+                        current_submodule[key] = value
+                if current_submodule:
+                    submodules.append(current_submodule)
 
-            # Delete the branch locally
-            try:
-                subprocess.check_call(["git", "-C", org_path, "branch", "-D", branch_name])
-            except subprocess.CalledProcessError:
-                messagebox.showerror("Error", f"Failed to delete local branch {branch_name}.")
-                return
+                print(f"Submodules: {submodules}")
 
-            # Delete the branch remotely
-            try:
-                subprocess.check_call(["git", "-C", org_path, "push", "origin", "--delete", branch_name])
-            except subprocess.CalledProcessError:
-                messagebox.showerror("Error", f"Failed to delete remote branch {branch_name}.")
-                return
+            # Open confirmation dialog for branch deletion
+            result = DeleteWithSubmodulesDialog(self.root, self.github_client, org_name, repo_name, branch_name, submodules)
 
-            # Check for the presence of a .gitmodules file
-            gitmodules_path = os.path.join(org_path, ".gitmodules")
-            if not os.path.exists(gitmodules_path):
-                messagebox.showinfo("Info", "No .gitmodules file found in the repository.")
+            if result.success:
+                # Refresh UI after successful operation
+                self.refresh()
+                messagebox.showinfo("Success", "Branches deleted successfully.")
             else:
-                # Parse .gitmodules to retrieve submodule details
-                submodules = []
-                with open(gitmodules_path, "r") as f:
-                    current_submodule = {}
-                    for line in f:
-                        if line.startswith("[submodule"):
-                            if current_submodule:
-                                submodules.append(current_submodule)
-                            current_submodule = {}
-                        elif "=" in line:
-                            key, value = map(str.strip, line.split("=", 1))
-                            current_submodule[key] = value
-                    if current_submodule:
-                        submodules.append(current_submodule)
-
-                # Delete branches in submodules
-                for submodule in submodules:
-                    submodule_path = os.path.join(repo_path, submodule.get("path", ""))
-                    branch_to_delete = submodule.get("branch", "")
-
-                    if os.path.exists(submodule_path) and branch_to_delete:
-                        # Delete branch locally in submodule
-                        try:
-                            subprocess.check_call(
-                                ["git", "-C", submodule_path, "branch", "-D", branch_to_delete]
-                            )
-                        except subprocess.CalledProcessError:
-                            messagebox.showerror(
-                                "Error",
-                                f"Failed to delete local branch {branch_to_delete} in submodule {submodule.get('path')}.",
-                            )
-                            continue
-
-                        # Delete branch remotely in submodule
-                        try:
-                            subprocess.check_call(
-                                ["git", "-C", submodule_path, "push", "origin", "--delete", branch_to_delete]
-                            )
-                        except subprocess.CalledProcessError:
-                            messagebox.showerror(
-                                "Error",
-                                f"Failed to delete remote branch {branch_to_delete} in submodule {submodule.get('path')}.",
-                            )
-                            continue
-
-            # Refresh TreeView after successful operation
-            self.update_treeview_display(org_path)
-            messagebox.showinfo("Success", "Branches deleted successfully.")
+                messagebox.showerror("Error", "Branch deletion failed. Please try again.")
 
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {str(e)}.")
 
-
-
-    def update_treeview_display(self, repo_path):
-        """
-        Updates the TreeView widget with the local and remote branches of the repository.
-
-        Args:
-            repo_path (str): The file path to the Git repository.
-
-        Steps:
-            1. Clears the TreeView to remove any existing items.
-            2. Fetches the list of local branches using the git branch --list command.
-            3. Fetches the list of remote branches using the git branch -r --list command.
-            4. Adds the remote branches to the TreeView widget.
-            5. Displays a success message upon completion.
-
-        Raises:
-            Displays an error message via `messagebox` in case of subprocess command failure.
-        """
-
-        try:
-            # Čišćenje Treeview pre nego što dodamo nove stavke
-            for item in self.branches_tree.get_children():
-                self.branches_tree.delete(item)
-
-            # Dohvatanje svih lokalnih grana
-            local_branches = subprocess.check_output(
-                ["git", "-C", repo_path, "branch", "--list"],
-                text=True
-            ).splitlines()
-
-            # Dohvatite sve remote grane
-            remote_branches = subprocess.check_output(
-                ["git", "-C", repo_path, "branch", "-r", "--list"],
-                text=True
-            ).splitlines()
-
-            # Dodavanje lokalne grane u Treeview
-            # for branch in local_branches:
-            #     branch_name = branch.strip()
-            #     self.branches_tree.insert("", "end", text=branch_name, values=("local",))
-
-            # Dodavanje remote grane u Treeview
-            for branch in remote_branches:
-                branch_name = branch.strip().replace("origin/", "")
-                self.branches_tree.insert("", "end", text=branch_name, values=("remote",))
-
-            # Poruka o uspehu
-            messagebox.showinfo("Success", "Treeview updated successfully!")
-
-        except subprocess.CalledProcessError as e:
-            messagebox.showerror("Error", f"Failed to update Treeview: {str(e)}.")
-
-
-    
-      
+ 
     def update_github_token(self):
         token_dialog = TokenDialog(self.root)
         updated_token = token_dialog.result
@@ -800,7 +688,7 @@ class App:
         branch_name = get_path(self.branches_tree, selected_item)
         print(f"Create release branch for {branch_name} on {org_name}/{repo_name}...")
         CreateReleaseBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
-    
+
 
 class TokenDialog(simpledialog.Dialog):
     def __init__(self, parent, message = None):
@@ -1562,6 +1450,7 @@ def main():
         git_hostname = config.get("GIT_HOSTNAME", "github.com")
         # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(git_hostname, token)
+        github = Github(base_url=f"https://api.{git_hostname}", login_or_token=token)
        
         # Load configuration and get default organization/repository
         default_org = config.get("default_organization") if config else None
@@ -1575,7 +1464,7 @@ def main():
         available_repositories = github_client.get_organization_repos_names(app_org)
         app_repo = select_default_or_first(default_repo, available_repositories, "repository")
 
-        app = App(root, github_client, app_org, app_repo, token_entered_via_token_dialog)  
+        app = App(root, github_client, app_org, app_repo, token_entered_via_token_dialog, github)  
 
         # Populate combo boxes with available organizations and repositories
         app.org_combo['values'] = available_organizations
