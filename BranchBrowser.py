@@ -1140,14 +1140,21 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.feature_bug_entry.grid(row=5, column=1, sticky='w')
 
         # Preview label to display the real-time generated path
-        tk.Label(master, text="Feature path preview:").grid(row=6, column=0, sticky='e')
+        tk.Label(master, text="Feature path preview:").grid(row=7, column=0, sticky='e')
         self.replace_feature_branch_prefix = tk.Entry(master, textvariable=self.path_preview, fg="blue",width=60, state="readonly")
-        self.replace_feature_branch_prefix.grid(row=6, column=1, sticky='w')
+        self.replace_feature_branch_prefix.grid(row=7, column=1, sticky='w')
 
         # Set up listeners to update the preview when fields change
         self.team_dropdown.bind("<<ComboboxSelected>>", lambda event: self.update_path_preview())
         self.feature_bug_entry.bind("<KeyRelease>", lambda event: self.update_path_preview())
         self.push_checkbox.config(command=self.update_path_preview)
+
+        # Message to show when a space is entered
+        self.space_warning = tk.Label(master, text="", fg="red")
+        self.space_warning.grid(row=6, column=1, sticky='w')
+
+        # Validation for the feature_bug_entry field
+        self.feature_bug_entry.bind("<KeyRelease>", self.validate_no_space)
 
         # Initial preview setup
         self.update_path_preview()
@@ -1155,12 +1162,24 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         # get submodules info - only 1st level
         self.submodules_info = get_submodules_info(self.github_client, self.org_name, self.repo_name, self.branch_name)
 
-        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=7, sticky='w')
+        tk.Label(master, text="List of branches from which feature branches will be created:", font=('TkDefaultFont', 10, 'bold')).grid(row=8, sticky='w')
 
         submodules_hierarchy_string = f"R:{self.repo_name} B:{self.branch_name}\n" + build_hierarchy(self.submodules_info, format_output, get_sublist)
 
-        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=8, sticky='w')
-   
+        tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=9, sticky='w')
+    
+    def validate_no_space(self, event):
+        text = self.feature_bug_entry.get()
+        
+        # If there's a space in the text, highlight the entry and show the warning
+        if ' ' in text:
+            self.feature_bug_entry.config(bg="red")
+            self.space_warning.config(text="Spaces are not allowed!")
+        else:
+            self.feature_bug_entry.config(bg="white")
+            self.space_warning.config(text="")  # Clear the warning message when valid
+        self.update_path_preview()
+        
     # Use the GitHubClient to get team names for the organization
     def populate_team_dropdown(self):
         try:
