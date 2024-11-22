@@ -546,17 +546,15 @@ class App:
                 tree.insert(parent, 'end', text=v, tags=("branch_tree", "has_tooltip",))
                 
     # Update repository combo box based on selected organization and set default if available
-    def update_repos(self, event):
+    def update_repos(self, event, last_selected_index = 0):
         org_name = self.org_combo.get()
         repos = self.github_client.get_organization_repos_names(org_name)
         self.repo_combo['values'] = repos
-        if self.default_repo in repos:
-            repo_index = repos.index(self.default_repo)
-            self.repo_combo.current(repo_index)
-        elif repos:
-            self.repo_combo.current(0)
+        self.repo_combo.current(last_selected_index)
         
         self.update_tree(None)
+
+
 
     # Refresh tree view with branches from the selected repository
     def update_tree(self, event):
@@ -724,7 +722,8 @@ class App:
         print(f'Using organization: {self.default_org}, repository: {self.default_repo}, team: {team}') 
             
     def fetch_data(self):
-        self.update_repos(None)
+        last_selected_index = self.repo_combo.current()
+        self.update_repos(None, last_selected_index)
         self.orgs = self.github_client.get_organizations_names()
         self.org_combo['values'] = self.orgs
          
