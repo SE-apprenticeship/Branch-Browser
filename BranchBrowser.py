@@ -401,6 +401,12 @@ class App:
     def on_search_input_change(self, *args):
         search_term = self.search_var.get()
         filtered_structure = self.filter_branches_by_string(self.branches_structure, search_term)
+        if not filtered_structure:
+            message = "No results found."
+            self.branches_tree.heading("#0", text=message, anchor=tk.W)
+        else:
+            message = f'Branches on {self.org_combo.get()}/{self.repo_combo.get()}'
+            self.branches_tree.heading("#0", text=message)
         self.branches_tree.delete(*self.branches_tree.get_children())
         self.populate_tree(self.branches_tree, filtered_structure)
         for item in self.branches_tree.get_children():
@@ -427,8 +433,12 @@ class App:
         self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
         
         # Search bar
+        self.search_bar_frame = tk.Frame(self.treeview_frame)
+        self.search_bar_frame.pack(fill=tk.X, side='top')
         self.search_var = tk.StringVar()
-        search_entry = tk.Entry(self.treeview_frame, textvariable=self.search_var)
+        self.search_label = tk.Label(self.search_bar_frame, text="Search:")
+        self.search_label.pack(side="left", padx=10, pady=10)
+        search_entry = tk.Entry(self.search_bar_frame, textvariable=self.search_var)
         search_entry.pack(pady=10, padx=10, fill=tk.X)
 
         self.branches_tree = ttk.Treeview(self.treeview_frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
