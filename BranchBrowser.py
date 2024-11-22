@@ -600,6 +600,7 @@ class App:
 
     # Opens a configuration dialog for selecting organization, repository, and hostname.
     def open_config_dialog(self):
+        self.menu_bar.entryconfig("Edit config", state="disabled")
         config_dialog = tk.Toplevel(self.root)
         config_dialog.title("Edit Configuration")
 
@@ -656,6 +657,7 @@ class App:
             teams = self.github_client.get_organization_teams(org_name)
             if not teams:
                 messagebox.showwarning("No Teams", "No teams found for the selected organization.")
+                self.menu_bar.entryconfig("Edit config", state="normal")
                 return
             team_combobox['values'] = teams
             if self.default_team and self.default_team in teams:
@@ -692,6 +694,7 @@ class App:
                 self.update_main_display(new_org, new_repo, new_team)
                 self.refresh_branches_by_config()
                 config_dialog.destroy()
+                self.menu_bar.entryconfig("Edit config", state="normal")
             else:
                 messagebox.showwarning("Input Error", "All fields must be provided.")
 
@@ -701,7 +704,9 @@ class App:
         def on_cancel():
             print("Configuration editing canceled")
             config_dialog.destroy()
+            self.menu_bar.entryconfig("Edit config", state="normal")
 
+        config_dialog.protocol("WM_DELETE_WINDOW", lambda: self.menu_bar.entryconfig("Edit config", state="normal") or config_dialog.destroy())
         cancel_button = tk.Button(config_dialog, text="Cancel", command=on_cancel)
         cancel_button.pack(side='right',pady=10,padx=50)
 
@@ -1348,7 +1353,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.space_warning.grid(row=6, column=1, sticky='w')
 
         # Validation for the feature_bug_entry field
-        self.feature_bug_entry.bind("<KeyRelease>", self.validate_no_space)
+        self.feature_bug_entry.bind("<KeyRelease>", self.validate_input_bug_description)
 
         # Initial preview setup
         self.update_path_preview()
@@ -1362,17 +1367,29 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
 
         tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=9, sticky='w')
     
-    def validate_no_space(self, event):
+    # Validates the input for invalid characters and updates the UI accordingly.
+    def validate_input_bug_description(self, event):
         text = self.feature_bug_entry.get()
         
-        # If there's a space in the text, highlight the entry and show the warning
-        if ' ' in text:
-            self.feature_bug_entry.config(bg="red")
-            self.space_warning.config(text="Spaces are not allowed!")
+        invalid_characters = self.check_invalid_characters(text)
+        if invalid_characters:
+                if invalid_characters[0] == ' ':
+                    self.space_warning.config(text="Space not allowed!")
+                else:
+                    self.space_warning.config(
+                        text=f"The character '{invalid_characters[0]}' is not allowed!"
+                    )
+                self.feature_bug_entry.config(bg="red")
         else:
             self.feature_bug_entry.config(bg="white")
-            self.space_warning.config(text="")  # Clear the warning message when valid
+            self.space_warning.config(text="")
+            
         self.update_path_preview()
+
+    # Checks if the input contains any invalid characters and returns a list of them.
+    def check_invalid_characters(self, text):
+        invalid_chars = {' ', '^', '*'}
+        return [char for char in text if char in invalid_chars]
         
     # Use the GitHubClient to get team names for the organization
     def populate_team_dropdown(self):
