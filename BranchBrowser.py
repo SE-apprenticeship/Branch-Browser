@@ -702,7 +702,7 @@ class App:
         save_button.pack(side='left', pady=10, padx=50)
 
         def on_cancel():
-            print("Configuration editing canceled")
+            print_message(MessageType.WARNING, "Configuration editing canceled")
             config_dialog.destroy()
             self.menu_bar.entryconfig("Edit config", state="normal")
 
@@ -715,7 +715,7 @@ class App:
     def load_config():
         config_path = os.path.join(os.path.dirname(__file__), "config.json")
         if not os.path.exists(config_path):
-            print(f"Config file {config_path} not found. Using default values.")
+            print_message(MessageType.WARNING, f"Config file {config_path} not found. Using default values.")
             return None
         
         try:
@@ -723,16 +723,16 @@ class App:
                 config = json.load(config_file)
                 return config
         except json.JSONDecodeError:
-            print(f"Error decoding JSON from config file {config_path}. Using default values.")
+            print_message(MessageType.ERROR, f"Error decoding JSON from config file {config_path}. Using default values.")
             return None  
         except IOError as e:
-            print(f"IOError: {e} - There was an issue accessing the file {config_path}.")
+            print_message(MessageType.ERROR, f"IOError: {e} - There was an issue accessing the file {config_path}.")
             return None
         except Exception as e:
-            print(f"Unexpected error loading config: {e}")
+            print_message(MessageType.ERROR, f"Unexpected error loading config: {e}")
             return None
         except FileNotFoundError:
-            print(f"Config file {config_path} not found. Using default values.")
+            print_message(MessageType.ERROR,f"Config file {config_path} not found. Using default values.")
             return None
           
     # Saves the provided configuration data to a file     
@@ -740,17 +740,17 @@ class App:
         try:
             with open(self.config_path, "w") as config_file:
                 json.dump(config, config_file, indent=4)
-            print(f"Config saved to {self.config_path}")
+            print_message(MessageType.INFO, f"Config saved to {self.config_path}")
         except TypeError as e:
-            print(f"TypeError: {e} - The object is not serializable to JSON.")
+            print_message(MessageType.ERROR, f"TypeError: {e} - The object is not serializable to JSON.")
         except IOError as e:
-            print(f"IOError: {e} - There was an issue with the file {self.config_path}.")
+            print_message(MessageType.ERROR, f"IOError: {e} - There was an issue with the file {self.config_path}.")
         except ValueError as e:
-            print(f"ValueError: {e} - The data is not valid for JSON serialization.")
+            print_message(MessageType.ERROR, f"ValueError: {e} - The data is not valid for JSON serialization.")
         except json.JSONDecodeError as e:
-            print(f"JSONDecodeError: {e} - There was an error decoding the JSON data.")
+            print_message(MessageType.ERROR, f"JSONDecodeError: {e} - There was an error decoding the JSON data.")
         except Exception as e:
-            print(f"Unexpected error saving config: {e}")
+            print_message(MessageType.ERROR, f"Unexpected error saving config: {e}")
             
     # Updates the main display with new organization and repository settings        
     def update_main_display(self, new_org, new_repo, team): 
@@ -762,7 +762,7 @@ class App:
 
         self.org_combo.set(self.default_org)
         self.repo_combo.set(self.default_repo)
-        print(f'Using organization: {self.default_org}, repository: {self.default_repo}, team: {team}') 
+        print_message(MessageType.INFO, f'Using organization: {self.default_org}, repository: {self.default_repo}, team: {team}') 
             
     def fetch_data(self):
         last_selected_index = self.repo_combo.current()
@@ -840,7 +840,7 @@ class App:
             # Checking if the entered GitHub token is valid
             test_github_client = GitHubClient(GIT_HOSTNAME, updated_token) 
             save_credentials("BranchBrowser", "github_token", updated_token)
-            print("Credentials for 'BranchBrowser' have been saved successfully.")
+            print_message(MessageType.INFO, "Credentials for 'BranchBrowser' have been saved successfully.")
         except Exception as e:
             handle_and_print_exception(e, 'Token not valid.')
 
@@ -1287,11 +1287,11 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
                 with open(config_path, 'r') as file:
                     self.config = json.load(file)
             except IOError:
-                print("Error: There was an issue reading the file.")
+                print_message(MessageType.ERROR, "Error: There was an issue reading the file.")
             except json.JSONDecodeError:
-                print("Error: The file is not a valid JSON.")
+                print_message(MessageType.ERROR, "Error: The file is not a valid JSON.")
             except Exception as e:
-                print(f"An unexpected error occurred: {e}")
+                print_message(MessageType.ERROR, f"An unexpected error occurred: {e}")
         else:
             self.config = config_path
 
@@ -1401,7 +1401,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
             else:
                     self.team_dropdown.set(team_names[0]) 
         except Exception as e:
-            print(f"Error fetching team names: {e}")
+            print_message(MessageType.ERROR, "Error fetching team names: {e}")
             self.team_dropdown['values'] = []
 
     # Updates the path preview based on the selected feature prefix,
@@ -1730,7 +1730,7 @@ def save_credentials(credential_name, username, password):
         'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE
     }
     win32cred.CredWrite(credential)
-    print(f"Credentials for '{credential_name}' saved successfully.")
+    print_message(MessageType.INFO, f"Credentials for '{credential_name}' saved successfully.")
 
 def get_credentials(credential_name):
     try:
