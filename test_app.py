@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import Mock, patch, MagicMock, mock_open
-from BranchBrowser import App, load_config
+from BranchBrowser import App
 import os
 
 TEST_ORG = "TestOrg"
@@ -18,7 +18,7 @@ class TestAppMethods(unittest.TestCase):
         with patch.object(App, 'setup_ui'), patch.object(App, 'setup_actions'):
             self.mock_root = Mock()
             self.mock_github_client = Mock()
-            self.app = App(self.mock_root, self.mock_github_client,  TEST_ORG, TEST_REPO)
+            self.app = App(self.mock_root, self.mock_github_client,  TEST_ORG, TEST_REPO, CONFIG_JSON_PATH)
         
         self.app.org_combo = Mock()
         self.app.repo_combo = MagicMock()
@@ -65,7 +65,7 @@ class TestAppMethods(unittest.TestCase):
 
     @patch("builtins.open", new_callable=mock_open, read_data=str(DEFAULT_CONFIG_DATA).replace("'", '"'))
     def test_load_config_valid(self, mock_file):
-        config = load_config()
+        config = App.load_config()
         
         self.assertIsNotNone(config)
         self.assertEqual(config.get("default_organization"), TEST_ORG)
@@ -75,7 +75,7 @@ class TestAppMethods(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open)
     @patch("os.path.exists", return_value=False)
     def test_load_config_file_not_found(self, mock_exists, mock_file):
-        config = load_config()
+        config = App.load_config()
         
         self.assertIsNone(config)
         mock_exists.assert_called_once_with(CONFIG_JSON_PATH)
@@ -83,7 +83,7 @@ class TestAppMethods(unittest.TestCase):
 
     @patch("builtins.open", new_callable=mock_open, read_data=str(DEFAULT_CONFIG_DATA).replace("'", '"')[:-1])
     def test_load_config_invalid_json(self, mock_file):
-        config = load_config()
+        config = App.load_config()
         
         self.assertIsNone(config)
         mock_file.assert_called_once_with(CONFIG_JSON_PATH, "r")
