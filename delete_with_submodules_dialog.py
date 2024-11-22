@@ -52,6 +52,10 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
             branch_name (str): The name of the branch to delete.
             submodules (list): List of submodules, each containing 'path' and 'branch'.
         """
+
+        # Parameter validation
+        validate_parameters(org_name, repo_name, branch_name, submodules)
+
         self.github_client = github_client
         self.org_name = org_name
         self.repo_name = repo_name
@@ -154,3 +158,20 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
                 logging.error(f"Failed to delete branch '{submodule_branch}' in submodule '{submodule_path}': {str(e)}")
                 print(f"Failed to delete branch '{submodule_branch}' in submodule '{submodule_path}': {str(e)}")
                 raise e
+            
+def validate_parameters(org_name, repo_name, branch_name, submodules):
+    try:
+        if not isinstance(org_name, str) or not org_name:
+            raise ValueError("The org_name parameter must be a non-empty string.")
+        if not isinstance(repo_name, str) or not repo_name:
+            raise ValueError("The repo_name parameter must be a non-empty string.")
+        if not isinstance(branch_name, str) or not branch_name:
+            raise ValueError("The branch_name parameter must be a non-empty string.")
+        if not isinstance(submodules, list):
+            raise ValueError("Submodules must be a list.")
+        for submodule in submodules:
+            if not isinstance(submodule, dict) or "path" not in submodule or "branch" not in submodule:
+                raise ValueError(f"Each submodule must be a dictionary with 'path' and 'branch': {submodule}")
+    except ValueError as e:
+        logging.error(f"Parameter validation failed: {e}")
+        raise
