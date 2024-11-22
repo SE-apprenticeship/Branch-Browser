@@ -1,5 +1,6 @@
 import base64
 import datetime
+from enum import Enum
 from io import StringIO
 import json
 import os
@@ -11,51 +12,88 @@ from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 from tkinter import messagebox
 import tkinter.ttk as ttk
 from tkinter import simpledialog
-from github import Github, UnknownObjectException, GithubException
+from github import Github, RateLimitExceededException, UnknownObjectException
 import configparser
 import requests
-import win32cred # type: ignore
-import threading 
+import win32cred
+from handlers.exceptions_handler import ExceptionsHandler
+from message_type import MessageType
 token = ''
 GIT_HOSTNAME = 'github.com'
-
+exceptions_handler = ExceptionsHandler()
 class GitHubClient:
     def __init__(self, hostname, token):
         self.github = Github(base_url=f"https://api.{hostname}", login_or_token=token)
         self.user = self.github.get_user()
         self.username = self.user.login # this will throw exception if token is invalid
-    
+
     def get_username(self):
         return self.username
 
     def get_organizations_names(self):
-        return [org.login for org in self.user.get_orgs()]
-
-    def get_organization_repos_names(self, org_name):
-        return [repo.name for repo in self.github.get_organization(org_name).get_repos()]
-
-    def get_organization_repo_branches(self, org_name, repo_name):
-        return [branch.name for branch in self.github.get_organization(org_name).get_repo(repo_name).get_branches()]
-
-    def get_organization_repo_branch_gitmodules_content(self, org_name, repo_name, branch_name):
+        orgs = []
         try:
-            file_content = self.github.get_organization(org_name).get_repo(repo_name).get_contents('.gitmodules', ref=branch_name)
-            return file_content.decoded_content.decode()
-        except UnknownObjectException:
-            return ''
+            orgs = [org.login for org in self.user.get_orgs()]
+        except Exception as e:
+            handle_and_print_exception(e, 'No organizations found.')
+        return orgs
+    
+    def get_organization_repos_names(self, org_name):
+        repos = []
+        try:
+            repos = [repo.name for repo in self.github.get_organization(org_name).get_repos()]
+        except Exception as e:
+            err_desc = f"Authenticated user ('{self.username}') lacks the necessary permissions to access the list of repositories for organization: {org_name}"
+            handle_and_print_exception(e, err_desc)
+        return repos
+    
+    def get_organization_repo_branches(self, org_name, repo_name):
+        branches = []
+        try:
+            branches = [branch.name for branch in self.github.get_organization(org_name).get_repo(repo_name).get_branches()]
+        except Exception as e:
+            err_desc = f"Authenticated user ('{self.username}') lacks the necessary permissions to access the list of branches for repository: '{org_name}{repo_name}'."
+            handle_and_print_exception(e, err_desc)
+        return branches
+    
+    def get_organization_repo_branch_gitmodules_content(self, org_name, repo_name, branch_name):
+        file_content = None
+        try:
+            org = self.github.get_organization(org_name)
+            repo = org.get_repo(repo_name)
+            file_content = repo.get_contents('.gitmodules', ref=branch_name)
+        except Exception as e:
+            err_desc = f"No .gitmodules file found. The repository '{repo_name} {branch_name}' does not contain any submodules or the submodule configuration is missing/corrupted."
+            handle_and_print_exception(e, err_desc)
+        return file_content.decoded_content.decode('utf-8') if file_content else None
 
     def get_organization_repo_branch_commit_sha(self, org_name, repo_name, branch_name):
-        return self.github.get_organization(org_name).get_repo(repo_name).get_branch(branch_name).commit.sha
+        try:
+            return self.github.get_organization(org_name).get_repo(repo_name).get_branch(branch_name).commit.sha
+        except Exception as e:
+            error_desc = f"Commit SHA not found.The branch may be empty, or the user ('{self.username}') lacks permissions to access the commit history for '{org_name}{repo_name}{branch_name}'."
+            handle_and_print_exception(e, error_desc)
+            return
 
     def organization_repo_create_branch(self, org_name, repo_name, new_branch_name, source_commit_sha):
         # refs/heads/new-branch is used to create a new branch
-        self.github.get_organization(org_name).get_repo(repo_name).create_git_ref(ref=f"refs/heads/{new_branch_name}", sha=source_commit_sha)
-
+        try:
+            self.github.get_organization(org_name).get_repo(repo_name).create_git_ref(ref=f"refs/heads/{new_branch_name}", sha=source_commit_sha)
+        except Exception as e:
+            error_desc = f"The new branch name ('{self.branch_name}') may already exist, or the user lacks permission to create branches."
+            handle_and_print_exception(e, error_desc)
+            
     def organization_repo_delete_branch(self, org_name, repo_name, branch_name):
-        # Fetch the branch reference
-        ref = self.github.get_organization(org_name).get_repo(repo_name).get_git_ref(f"heads/{branch_name}")
-        # Delete the branch by deleting its reference
-        ref.delete()
+        try:
+            # Fetch the branch reference
+            ref = self.github.get_organization(org_name).get_repo(repo_name).get_git_ref(f"heads/{branch_name}")
+        except Exception as e:
+            handle_and_print_exception(e, f"The specified Git reference for the branch '{branch_name}' does not exist.")
+        try:
+            # Delete the branch by deleting its reference
+            ref.delete()
+        except Exception as e:
+            handle_and_print_exception(e, f"Unable to delete branch {branch_name}.")
 
     def get_repo_branches_structure(self, org_name, repo_name):
         repo = self.github.get_organization(org_name).get_repo(repo_name)
@@ -86,10 +124,13 @@ class GitHubRepoSubmoduleManager:
         }
 
     def make_request(self, method, url, data=None):
-        response = requests.request(method, url, headers=self.headers, data=json.dumps(data))
-        response.raise_for_status()
-        return response.json()
-    
+        try:
+            response = requests.request(method, url, headers=self.headers, data=json.dumps(data))
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            handle_and_print_exception(e, f"Unable to make request [{method}] on {url}")
+            
     def fix_config_file_formatting(self, content):
         # Remove \n in front of [ - because of duplicates
         content = re.sub(r'\n(?=\[)', '', content)
@@ -189,7 +230,6 @@ class GitHubRepoSubmoduleManager:
                 tree_sha = submodule_entry['sha']
                 tree_list = self.make_request('GET', f'https://{self.hostname}/repos/{self.owner}/{self.repo_top}/git/trees/{tree_sha}')['tree']
             
-
         gitmodules_config = configparser.ConfigParser(allow_no_value=True)
         add_submodule_section = False
         update_submodule_branch = False
@@ -291,8 +331,7 @@ class GitHubRepoSubmoduleManager:
             'sha': commit_sha
         }
         response = self.make_request('PATCH', f'https://{self.hostname}/repos/{self.owner}/{self.repo_top}/git/refs/heads/{parent_branch}', data)
-
-        print(f'Updated {response["ref"]} to {response["object"]["sha"]}')
+        print_message(MessageType.INFO, f'Updated {response["ref"]} to {response["object"]["sha"]}')
 
 
 class TreeviewTooltip:
@@ -322,14 +361,11 @@ class TreeviewTooltip:
             self.hide_tooltip()
 
     def show_tooltip(self, item, x, y):
+        text = None
         try:
             text = self.tooltip_func(self.github_client, self.org_combo, self.repo_combo, self.treeview, item)
-        except GithubException as e:
-                if e.status == 404:
-                    text = None
-                    print("Error: Repository not found!")
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            handle_and_print_exception(e)
         if text:
             self.tooltip_opened = True
             self.tip_window = tw = tk.Toplevel(self.treeview)
@@ -361,16 +397,16 @@ def tooltip_text(github_client, org_combo, repo_combo, treeview, item):
     org_name = org_combo.get()
     repo_name = repo_combo.get()
     branch_name = get_path(treeview, item)
-
-    # get submodules info
-    submodules_info = get_submodules_info(github_client, org_name, repo_name, branch_name)
-    # extend with sub sub module info
-    submodules_info =[sub_m_info + (get_submodules_info(github_client, org_name, sub_m_info[1], sub_m_info[2]),) for sub_m_info in submodules_info]
-
-    submodules_hierarchy_string = f"R:{repo_name} B:{branch_name}\n" + build_hierarchy(submodules_info, format_output, get_sublist)
-    return submodules_hierarchy_string
-
-
+    submodules_info = None
+    try:
+        # get submodules info
+        submodules_info = get_submodules_info(github_client, org_name, repo_name, branch_name)
+        submodules_info =[sub_m_info + (get_submodules_info(github_client, org_name, sub_m_info[1], sub_m_info[2]),) for sub_m_info in submodules_info]
+        submodules_hierarchy_string = f"R:{repo_name} B:{branch_name}\n" + build_hierarchy(submodules_info, format_output, get_sublist)
+        return submodules_hierarchy_string
+    except Exception as e:
+        handle_and_print_exception(e)
+        # extend with sub sub module info
 class App:
     # Initialize the application with GitHub client, organization, and repository details
     def __init__(self, root, github_client, org, repo, credentials_saved, config_path, team):
@@ -384,10 +420,10 @@ class App:
         self.setup_actions()
         self.username = self.github_client.get_username()
         self.config_path = config_path
-        print(f'Connected to GitHub with user: {self.username}.')
-        print(f'Using organization: {self.default_org}, repository: {self.default_repo}')
+        print_message(MessageType.INFO, f'Connected to GitHub with user: {self.username}.')
+        print_message(MessageType.INFO, f'Using organization: {self.default_org}, repository: {self.default_repo}')
         if credentials_saved:
-            print("Credentials for 'BranchBrowser' have been saved successfully.")
+            print_message(MessageType.INFO, "Credentials for 'BranchBrowser' have been saved successfully.")
 
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
@@ -456,7 +492,6 @@ class App:
         log_text.tag_configure("info", foreground="black", font=("Consolas", 10, "bold"))
         # Redirect stdout to the Text widget
         sys.stdout = TextHandler(log_text)
-
 
     def recurse_children(self, item, open):
         self.branches_tree.item(item, open=open)  
@@ -726,28 +761,34 @@ class App:
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
-        print(f"Creating branch from {branch_name} on {org_name}/{repo_name}...")
+        message = f"Creating branch from {branch_name} on {org_name}/{repo_name}..."
+        print_message(MessageType.INFO, message)
         new_branch = CloneDialog(self.root, self.github_client, org_name, repo_name, branch_name).result
         # Check the result
         if new_branch:
-            print(f"New branch crated: {new_branch} on {org_name}/{repo_name}.")
+            message = f"New branch created: {new_branch} on {org_name}/{repo_name}."
+            print_message(MessageType.INFO, message)
             self.update_tree(None) # Update tree to reflect changes
         else:
-            print(f"Creating branch from {branch_name} on {org_name}/{repo_name} canceled!")
+            message = f"Creating branch from {branch_name} on {org_name}/{repo_name} canceled!"
+            print_message(MessageType.WARNING, message)
 
     def delete_branch(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
-        print(f"Deleting branch from {branch_name} on {org_name}/{repo_name}...")
+        message = f"Deleting branch from {branch_name} on {org_name}/{repo_name}..."
+        print_message(MessageType.INFO, message)
         result = DeleteDialog(self.root, self.github_client, org_name, repo_name, branch_name).result
         # Check the result
         if result:
-            print(f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
+            print_message(MessageType.INFO, f"Branch deleted: {branch_name} on {org_name}/{repo_name}.")
             self.branches_tree.delete(selected_item)
         else:
-            print(f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!")
+            message = f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!"
+            print_message(MessageType.WARNING, message)
+            
     def update_github_token(self):
         token_dialog = TokenDialog(self.root)
         updated_token = token_dialog.result
@@ -759,7 +800,7 @@ class App:
             save_credentials("BranchBrowser", "github_token", updated_token)
             print("Credentials for 'BranchBrowser' have been saved successfully.")
         except Exception as e:
-            print("Wrong credentials. Entered token is not valid.")
+            handle_and_print_exception(e, 'Token not valid.')
 
         
     def manage_submodules(self):
@@ -768,7 +809,7 @@ class App:
         team_names = self.github_client.get_organization_teams(org_name)
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
-        print(f"Manage submodules for {branch_name} on {org_name}/{repo_name}...")
+        print_message(MessageType.INFO, f"Manage submodules for {branch_name} on {org_name}/{repo_name}...")
         SubmoduleSelectorDialog(self.root, self.github_client, org_name, repo_name, team_names, branch_name, self.update_tree)
 
     
@@ -777,7 +818,7 @@ class App:
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
-        print(f"Create feature branch for {branch_name} on {org_name}/{repo_name}...")
+        print_message(MessageType.INFO, f"Create feature branch for {branch_name} on {org_name}/{repo_name}...")
         CreateFeatureBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree, self.config_path)
 
     def create_release_branch(self):
@@ -785,7 +826,7 @@ class App:
         repo_name = self.repo_combo.get()
         selected_item = self.last_tree_item_rightclicked
         branch_name = get_path(self.branches_tree, selected_item)
-        print(f"Create release branch for {branch_name} on {org_name}/{repo_name}...")
+        print_message(MessageType.INFO, f"Create release branch for {branch_name} on {org_name}/{repo_name}...")
         CreateReleaseBranchDialog(self.root, self.github_client, org_name, repo_name, branch_name, self.update_tree)
     
 
@@ -835,8 +876,9 @@ class CloneDialog(simpledialog.Dialog):
 
     def apply(self):
         self.github_client.organization_repo_create_branch(self.org_name, self.repo_name, self.new_branch_name.get(), self.source_commit_sha.get())
-        print("Created new branch.")
         self.result = self.new_branch_name.get()
+        print_message(MessageType.INFO, f"Created new branch {self.result}.")
+        
 
 
 class DeleteDialog(simpledialog.Dialog):
@@ -857,7 +899,7 @@ class DeleteDialog(simpledialog.Dialog):
 
     def apply(self):
         self.github_client.organization_repo_delete_branch(self.org_name, self.repo_name, self.branch_name)
-        print(f"Deleted branch {self.branch_name}.")
+        print_message(MessageType.INFO, f"Deleted branch {self.branch_name}.")
         self.result = self.branch_name
 
 
@@ -919,7 +961,6 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         # Call the superclass's __init__ method
         super().__init__(parent)
 
-
     def move_to_right(self):
         # Move selected item from left to right - add submodule
         selected = self.submodules_left_listbox.curselection()
@@ -930,7 +971,6 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
                 self.repo_branches_right_listbox.itemconfig(repo_branch_lb_info.position, {'fg': 'black'})
                 repo_branch_lb_info.set_used(False)
             self.submodules_left_listbox.delete(selected)
-
 
     def move_to_left(self):
         # Move selected item from right to left - remove submodule
@@ -949,7 +989,6 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         feature_versions = list({branch.split("/")[-2] for branch in filtered_branches})
         sorted_feature_versions = sorted(feature_versions, key=lambda v: float(v))
         return sorted_feature_versions
-
 
     def update_repo_branches_right_listbox(self, event = None):
         # Get the selected values of the repo name and branch type comboboxes
@@ -1036,7 +1075,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         super().buttonbox()  # Include the default OK and Cancel buttons
 
     def update_action(self):
-        print(f"Updating current submodules to HEAD revision on {self.org_name}/{self.repo_name}/{self.branch_name}...")
+        print_message(MessageType.INFO, f"Updating current submodules to HEAD revision on {self.org_name}/{self.repo_name}/{self.branch_name}...")
         original = set(self.repo_branch_left_lb_info_list)
 
         # Do the modification
@@ -1047,7 +1086,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
             if repo_submodule_manager.add_or_update_submodule(self.branch_name, orig_submodule.repo, orig_submodule.path):
                 updated.append(orig_submodule.repo)
 
-        print(f"Updated {updated} submodules to HEAD revision on {self.org_name}/{self.repo_name}/{self.branch_name}.")
+        print_message(MessageType.INFO, f"Updated {updated} submodules to HEAD revision on {self.org_name}/{self.repo_name}/{self.branch_name}.")
         super().cancel()
 
     def body(self, master):
@@ -1143,7 +1182,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         self.update_repo_branches_right_listbox()
 
     def cancel(self, event=None):
-        print(f"Manage submodules for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
+        print_message(MessageType.WARNING, f"Manage submodules for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
         super().cancel()  # Ensure the base class cancel method is called
 
     def apply(self, event=None):
@@ -1161,7 +1200,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
     def process(self):
         try:
             # Perform your action here
-            print("Modifying submodules...")
+            print_message(MessageType.INFO, "Modifying submodules...")
             original = set(self.repo_branch_left_lb_info_list)
             modified = set([RepoBranchListBoxInfo(item.split()[0][2:], item.split()[1][2:]) for item in self.submodules_left_listbox_val])
             added = modified - original
@@ -1177,21 +1216,21 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
                 calculated_path = calculate_submodule_path(self.org_name, add_submodule.repo)
                 repo_submodule_manager.add_or_update_submodule(self.branch_name, add_submodule.repo, calculated_path, add_submodule.branch)
 
-            print(f"Submodules updated for {self.branch_name} on {self.org_name}/{self.repo_name}.")
+            print_message(MessageType.INFO, f"Submodules updated for {self.branch_name} on {self.org_name}/{self.repo_name}.")
             # Convert the lists to strings
             deleted_str = ', '.join([item.repo for item in deleted])
             added_str = ', '.join([item.repo for item in added])
             # Print the result
-            print(f"Added: {added_str} ; Deleted: {deleted_str}")
+            text = f"{MessageType.INFO.value} Added: {added_str} ; Deleted: {deleted_str}"
+            print_message(MessageType.INFO, text)
             self.update_tree(None) # Update tree to reflect changes
-
         except Exception as e:
-            print(e)
+            handle_and_print_exception(e)
+
         finally:
             # Close the processing popup
             self.processing_popup.destroy()
-
-
+            
 class CreateFeatureBranchDialog(simpledialog.Dialog):
     def __init__(self, parent, github_client, org_name, repo_name, branch_name, update_tree, config_path):
 
@@ -1333,7 +1372,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
         self.path_preview.set(full_path)
 
     def cancel(self, event=None):
-        print(f"Create feature branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
+        print_message(MessageType.WARNING, f"Create feature branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
         super().cancel()  # Ensure the base class cancel method is called
 
     def apply(self, event=None):
@@ -1352,19 +1391,19 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
     def process(self):
         try:
             # Perform your action here
-            print("Creating feature branch structure...")
+            print_message(MessageType.INFO, "Creating feature branch structure...")
 
             # Create feature branch for submodule
             new_branch_name = self.branch_name.replace(self.search_branch_prefix_val, self.replace_feature_branch_prefix_val)
 
             # Validate if prefix replace will actually change branch name
             if new_branch_name == self.branch_name:
-                print(f'Replace search branch prefix:{self.search_branch_prefix_val} has no effect on branch: {self.branch_name}. Nothing is being replaced.')
+                print_message(MessageType.WARNING, f'Replace search branch prefix:{self.search_branch_prefix_val} has no effect on branch: {self.branch_name}. Nothing is being replaced.')
                 return
 
             branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, self.repo_name, self.branch_name)
             self.github_client.organization_repo_create_branch(self.org_name, self.repo_name, new_branch_name, branch_commit_sha)
-            print(f"Created new branch {new_branch_name} on top repo {self.repo_name}.")
+            print_message(MessageType.INFO, f"Created new branch {new_branch_name} on top repo {self.repo_name}.")
 
             for sub_m_info in self.submodules_info:
                 sub_m_repo_name = sub_m_info[1]
@@ -1374,7 +1413,7 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
                 new_sub_m_branch_name = sub_m_branch_name.replace(self.search_branch_prefix_val, self.replace_feature_branch_prefix_val)
                 branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, sub_m_repo_name, sub_m_branch_name)
                 self.github_client.organization_repo_create_branch(self.org_name, sub_m_repo_name, new_sub_m_branch_name, branch_commit_sha)
-                print(f"Created new branch {new_sub_m_branch_name} on sub repo {sub_m_repo_name}.")
+                print_message(MessageType.INFO, f"Created new branch {new_sub_m_branch_name} on sub repo {sub_m_repo_name}.")
 
                 # Now on new feature branch on top level connect all submodules with its new feature branches
                 repo_submodule_manager = GitHubRepoSubmoduleManager(self.org_name, self.repo_name, token)
@@ -1383,11 +1422,11 @@ class CreateFeatureBranchDialog(simpledialog.Dialog):
                 # add new submodule
                 repo_submodule_manager.add_or_update_submodule(new_branch_name, sub_m_info[0], sub_m_info[3], new_sub_m_branch_name)
 
-            print(f"Feature branch structure created for {self.branch_name} on {self.org_name}/{self.repo_name}.")
+            print_message(MessageType.INFO, f"Feature branch structure created for {self.branch_name} on {self.org_name}/{self.repo_name}.")
             self.update_tree(None) # Update tree to reflect changes
 
         except Exception as e:
-            print(e)
+            handle_and_print_exception(e)
         finally:
             # Close the processing popup
             self.processing_popup.destroy()    
@@ -1431,7 +1470,7 @@ class CreateReleaseBranchDialog(simpledialog.Dialog):
         tk.Label(master, text=submodules_hierarchy_string, justify=tk.LEFT, anchor='w', font=font.Font(family="Consolas", size=10)).grid(row=3, sticky='w')
 
     def cancel(self, event=None):
-        print(f"Create release branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
+        print_message(MessageType.WARNING, f"Create release branch for {self.branch_name} on {self.org_name}/{self.repo_name} canceled!")
         super().cancel()  # Ensure the base class cancel method is called
 
     def apply(self, event=None):
@@ -1450,19 +1489,19 @@ class CreateReleaseBranchDialog(simpledialog.Dialog):
     def process(self):
         try:
             # Perform your action here
-            print("Creating release branch structure...")
+            print_message(MessageType.INFO, "Creating release branch structure...")
 
             # Creeate release branch for submodule
             new_branch_name = self.branch_name.replace(self.search_branch_pattern_val, self.replace_branch_pattern_val)
 
             # Validate if pattern replace will actually change branch name
             if new_branch_name == self.branch_name:
-                print(f'Replace search branch pattern:{self.search_branch_pattern_val} has no effect on branch: {self.branch_name}. Nothing is being replaced.')
+                print_message(MessageType.WARNING, f'Replace search branch pattern:{self.search_branch_pattern_val} has no effect on branch: {self.branch_name}. Nothing is being replaced.')
                 return
 
             branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, self.repo_name, self.branch_name)
             self.github_client.organization_repo_create_branch(self.org_name, self.repo_name, new_branch_name, branch_commit_sha)
-            print(f"Created new branch {new_branch_name} on top repo {self.repo_name}.")
+            print_message(MessageType.INFO, f"Created new branch {new_branch_name} on top repo {self.repo_name}.")
 
             for sub_m_info in self.submodules_info:
                 sub_m_repo_name = sub_m_info[1]
@@ -1472,7 +1511,7 @@ class CreateReleaseBranchDialog(simpledialog.Dialog):
                 new_sub_m_branch_name = sub_m_branch_name.replace(self.search_branch_pattern_val, self.replace_branch_pattern_val)
                 branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, sub_m_repo_name, sub_m_branch_name)
                 self.github_client.organization_repo_create_branch(self.org_name, sub_m_repo_name, new_sub_m_branch_name, branch_commit_sha)
-                print(f"Created new branch {new_sub_m_branch_name} on sub repo {sub_m_repo_name}.")
+                print_message(MessageType.INFO, f"Created new branch {new_sub_m_branch_name} on sub repo {sub_m_repo_name}.")
 
                 for sub_sub_m_info in sub_m_info[4]:
                     sub_sub_m_repo_name = sub_sub_m_info[1]
@@ -1482,7 +1521,7 @@ class CreateReleaseBranchDialog(simpledialog.Dialog):
                     new_sub_sub_m_branch_name = sub_sub_m_branch_name.replace(self.search_branch_pattern_val, self.replace_branch_pattern_val)
                     branch_commit_sha = self.github_client.get_organization_repo_branch_commit_sha(self.org_name, sub_sub_m_repo_name, sub_sub_m_branch_name)
                     self.github_client.organization_repo_create_branch(self.org_name, sub_sub_m_repo_name, new_sub_sub_m_branch_name, branch_commit_sha)
-                    print(f"Created new branch {new_sub_sub_m_branch_name} on sub sub repo {sub_sub_m_repo_name}.")
+                    print_message(MessageType.INFO, f"Created new branch {new_sub_sub_m_branch_name} on sub sub repo {sub_sub_m_repo_name}.")
 
                     # Now on new feature branch on first level submodule connect all sub submodules with its new feature branches
                     repo_submodule_manager = GitHubRepoSubmoduleManager(self.org_name, sub_m_repo_name, token)
@@ -1498,11 +1537,11 @@ class CreateReleaseBranchDialog(simpledialog.Dialog):
                 # add new submodule
                 repo_submodule_manager.add_or_update_submodule(new_branch_name, sub_m_info[0], sub_m_info[3], new_sub_m_branch_name)
 
-            print(f"Release branch structure created for {self.branch_name} on {self.org_name}/{self.repo_name}.")
+            print_message(MessageType.INFO, f"Release branch structure created for {self.branch_name} on {self.org_name}/{self.repo_name}.")
             self.update_tree(None) # Update tree to reflect changes
 
         except Exception as e:
-            print(e)
+            handle_and_print_exception(e)
         finally:
             # Close the processing popup
             self.processing_popup.destroy()         
@@ -1510,7 +1549,6 @@ class CreateReleaseBranchDialog(simpledialog.Dialog):
 
 def get_submodules_info(github_client, org_name, repo_name, branch_name):
     gitmodules_content = github_client.get_organization_repo_branch_gitmodules_content(org_name, repo_name, branch_name)
-
     gitmodules_config = configparser.ConfigParser(allow_no_value=True)
     gitmodules_config.read_string(gitmodules_content)
 
@@ -1578,19 +1616,24 @@ def format_output(item):
 def get_sublist(item):
     return item[4] if len(item) > 4 and isinstance(item[4], list) else None  # 4 = sublist if exist
 
-
 class TextHandler(object):
     def __init__(self, widget):
         self.widget = widget
 
     def write(self, s):
         self.widget.config(state='normal')  # Enable the Text widget
-
         if s != '\n':
              # Get current date and time
             now = datetime.datetime.now()
             timestamp = now.strftime("%d/%m/%Y %H:%M:%S.%f")[:-3]  # Format date and time
-            self.widget.insert(tk.END, timestamp + " " + s)
+            if s.startswith(MessageType.ERROR.value):
+                self.widget.insert(tk.END, timestamp + " " + s , "error")
+            elif s.startswith(MessageType.WARNING.value):
+                self.widget.insert(tk.END, timestamp + " " + s , "warning")
+            elif s.startswith(MessageType.INFO.value):
+                self.widget.insert(tk.END, timestamp + " " + s, "info")
+            else:
+                self.widget.insert(tk.END, timestamp + " " + s)
         else:
             self.widget.insert(tk.END, s)
 
@@ -1599,13 +1642,30 @@ class TextHandler(object):
 
     def flush(self):
         pass
-#Returns the default value if available, otherwise selects the first available option with a message.   
+# Load configuration settings from 'config.json', or use defaults if file is missing or invalid
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    if not os.path.exists(config_path):
+        message = f"Config file {config_path} not found. Using default values."
+        print_message(MessageType.WARNING, message)
+        return None
+    
+    try:
+        with open(config_path, "r") as config_file:
+            config = json.load(config_file)
+            return config
+    except json.JSONDecodeError as e:
+        handle_and_print_exception(e, 'Error decoding JSON!')
+        return None
+#Returns the default value if available, 
+#otherwise selects the first available option with a message.   
 def select_default_or_first(default_value, available_values, entity_name):
     if default_value in available_values:
         return default_value
     else:
-        print(f"Default {entity_name} '{default_value}' not found. Using the first available {entity_name}.")
-        return available_values[0] 
+        message = f"Default {entity_name} '{default_value}' not found. Using the first available {entity_name}."
+        print_message(MessageType.WARNING, message)
+        return available_values[0]
 
 def save_credentials(credential_name, username, password):
     credential = {
@@ -1616,6 +1676,7 @@ def save_credentials(credential_name, username, password):
         'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE
     }
     win32cred.CredWrite(credential)
+    print(f"Credentials for '{credential_name}' saved successfully.")
 
 def get_credentials(credential_name):
     try:
@@ -1624,8 +1685,16 @@ def get_credentials(credential_name):
         password = credential['CredentialBlob'].decode('utf-16')
         return username, password
     except Exception as e:
-        return None, None
+        handle_and_print_exception(e, 'Can\'t get credentials from Windows Credential Manager.')
+        return None,None
 
+def print_message(type, message):
+    print(type.value + ' ' + message) 
+    
+def handle_and_print_exception(e, desc = None):
+    type, message = exceptions_handler.handle(e, desc)
+    print_message(type, message)
+        
 def main():
     global token
     root = tk.Tk(screenName='BranchBrowser')
@@ -1661,6 +1730,14 @@ def main():
             else:
                 token_dialog_message = "Wrong credentials. Entered token is not valid."
             
+    # Show a dialog asking for the GitHub token if not already set
+    if not token:
+        token_dialog = TokenDialog(root)
+        token = token_dialog.result
+        if not token:
+            print("No token provided. Exiting...")
+            return
+
     root.deiconify()
     root.title("BranchBrowser")
     root.geometry('1400x800')  # Set the size of the window
@@ -1675,13 +1752,13 @@ def main():
         git_hostname = config.get("GIT_HOSTNAME", "github.com") if config else GIT_HOSTNAME
         # Initialize GitHub client with provided token and hostname
         github_client = GitHubClient(git_hostname, token)
-       
         # Load configuration and get default organization/repository
         default_org = config.get("default_organization") if config else None
         default_repo = config.get("default_repository") if config else None
 
         # Get list of available organizations
         available_organizations = github_client.get_organizations_names()
+        app_org = []
         app_org = select_default_or_first(default_org, available_organizations, "organization")
 
         # Get list of repositories for the selected organization
@@ -1701,11 +1778,9 @@ def main():
         # Set selected organization and repository in the UI
         app.org_combo.set(app_org)
         app.repo_combo.set(app_repo)
-        
     except Exception as e:
-        print(f"{str(e)}. Exiting...")
-        return
-
+            handle_and_print_exception(e, None)
+        
     root.mainloop()
 
 if __name__ == "__main__":
