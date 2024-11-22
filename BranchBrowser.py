@@ -425,6 +425,34 @@ class App:
         if credentials_saved:
             print_message(MessageType.INFO, "Credentials for 'BranchBrowser' have been saved successfully.")
 
+    def filter_branches_by_string(self, structure, search_string):
+        filtered_structure = {}
+        for key, subbranches in structure.items():
+            # If the branch name exactly matches the search string, include this branch and all its subbranches
+            if key.lower() == search_string.lower() or search_string.lower() in key.lower():
+                filtered_structure[key] = subbranches
+            else:
+                # Check subbranches recursively if the current branch doesn't match
+                filtered_subbranches = self.filter_branches_by_string(subbranches, search_string)
+                if filtered_subbranches:
+                    filtered_structure[key] = filtered_subbranches
+
+        return filtered_structure
+        
+    def on_search_input_change(self, *args):
+        search_term = self.search_var.get()
+        filtered_structure = self.filter_branches_by_string(self.branches_structure, search_term)
+        if not filtered_structure:
+            message = "No results found."
+            self.branches_tree.heading("#0", text=message, anchor=tk.W)
+        else:
+            message = f'Branches on {self.org_combo.get()}/{self.repo_combo.get()}'
+            self.branches_tree.heading("#0", text=message)
+        self.branches_tree.delete(*self.branches_tree.get_children())
+        self.populate_tree(self.branches_tree, filtered_structure)
+        for item in self.branches_tree.get_children():
+            self.recurse_children(item,True)
+
     def setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
         self.refresh_menu = tk.Menu(self.menu_bar,tearoff=False)
@@ -435,6 +463,7 @@ class App:
         self.menu_bar.add_command(label="Edit config", command=self.open_config_dialog)
 
         self.root.config(menu=self.menu_bar)
+        self.branches_structure = None
         self.treeview_frame = tk.Frame(self.root, width=300)
         self.treeview_frame.pack_propagate(False)
         self.treeview_frame.pack(side='left', fill='y')
@@ -444,10 +473,19 @@ class App:
         self.horizontal_scrollbar = Scrollbar(self.treeview_frame, orient=tk.HORIZONTAL)
         self.horizontal_scrollbar.pack(side=BOTTOM, fill=X)
         
+        # Search bar
+        self.search_bar_frame = tk.Frame(self.treeview_frame)
+        self.search_bar_frame.pack(fill=tk.X, side='top')
+        self.search_var = tk.StringVar()
+        self.search_label = tk.Label(self.search_bar_frame, text="Search:")
+        self.search_label.pack(side="left", padx=10, pady=10)
+        search_entry = tk.Entry(self.search_bar_frame, textvariable=self.search_var)
+        search_entry.pack(pady=10, padx=10, fill=tk.X)
+
         self.branches_tree = ttk.Treeview(self.treeview_frame, selectmode="none", yscrollcommand=self.vertical_scrollbar.set, xscrollcommand=self.horizontal_scrollbar.set)
         self.branches_tree.pack(fill=tk.BOTH, expand=True)
         self.branches_tree.column("#0", stretch=False)
-        
+        self.search_var.trace_add("write", self.on_search_input_change)
         self.vertical_scrollbar.config(command=self.branches_tree.yview)
         self.horizontal_scrollbar.config(command=self.branches_tree.xview)
         
@@ -519,14 +557,14 @@ class App:
     def refresh_branches_by_config(self):
         org_name = self.org_combo.get()
         repo_name = self.repo_combo.get()
-        branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
+        self.branches_structure = self.github_client.get_repo_branches_structure(org_name, repo_name)
         self.clear_branches_tree()
         
         heading_text=f'Branches on {self.org_combo.get()}/{self.repo_combo.get()}'
         self.branches_tree.heading("#0", text = heading_text, anchor=tk.W)
         text_width = tk.font.Font().measure(heading_text)
         self.branches_tree.column("#0", width=text_width, stretch=False)
-        self.populate_tree(self.branches_tree, branches_structure)
+        self.populate_tree(self.branches_tree, self.branches_structure)
 
 
     def clear_branches_tree(self):
