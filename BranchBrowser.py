@@ -513,6 +513,7 @@ class App:
 
     # Opens a configuration dialog for selecting organization, repository, and hostname.
     def open_config_dialog(self):
+        self.menu_bar.entryconfig("Edit config", state="disabled")
         config_dialog = tk.Toplevel(self.root)
         config_dialog.title("Edit Configuration")
 
@@ -569,6 +570,7 @@ class App:
             teams = self.github_client.get_organization_teams(org_name)
             if not teams:
                 messagebox.showwarning("No Teams", "No teams found for the selected organization.")
+                self.menu_bar.entryconfig("Edit config", state="normal")
                 return
             team_combobox['values'] = teams
             if self.default_team and self.default_team in teams:
@@ -605,6 +607,7 @@ class App:
                 self.update_main_display(new_org, new_repo, new_team)
                 self.refresh_branches_by_config()
                 config_dialog.destroy()
+                self.menu_bar.entryconfig("Edit config", state="normal")
             else:
                 messagebox.showwarning("Input Error", "All fields must be provided.")
 
@@ -614,7 +617,9 @@ class App:
         def on_cancel():
             print("Configuration editing canceled")
             config_dialog.destroy()
+            self.menu_bar.entryconfig("Edit config", state="normal")
 
+        config_dialog.protocol("WM_DELETE_WINDOW", lambda: self.menu_bar.entryconfig("Edit config", state="normal") or config_dialog.destroy())
         cancel_button = tk.Button(config_dialog, text="Cancel", command=on_cancel)
         cancel_button.pack(side='right',pady=10,padx=50)
 
