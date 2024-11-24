@@ -18,8 +18,13 @@ import requests
 import win32cred
 from handlers.exceptions_handler import ExceptionsHandler
 from message_type import MessageType
+import subprocess
+from delete_with_submodules_dialog import DeleteWithSubmodulesDialog
+
+
 token = ''
 GIT_HOSTNAME = 'github.com'
+GITMODULES_FILENAME = '.gitmodules'
 exceptions_handler = ExceptionsHandler()
 class GitHubClient:
     def __init__(self, hostname, token):
@@ -61,7 +66,7 @@ class GitHubClient:
         try:
             org = self.github.get_organization(org_name)
             repo = org.get_repo(repo_name)
-            file_content = repo.get_contents('.gitmodules', ref=branch_name)
+            file_content = repo.get_contents(GITMODULES_FILENAME, ref=branch_name)
         except Exception as e:
             err_desc = f"No .gitmodules file found. The repository '{repo_name} {branch_name}' does not contain any submodules or the submodule configuration is missing/corrupted."
             handle_and_print_exception(e, err_desc)
@@ -145,7 +150,7 @@ class GitHubRepoSubmoduleManager:
 
         # Get parent root tree list and try to find .gitmodules
         parent_tree_list = self.make_request('GET', f'https://{self.hostname}/repos/{self.owner}/{self.repo_top}/git/trees/{parent_tree_sha}')['tree']
-        gitmodules_entry = next((entry for entry in parent_tree_list if entry['path'] == '.gitmodules'), None)
+        gitmodules_entry = next((entry for entry in parent_tree_list if entry['path'] == GITMODULES_FILENAME), None)
 
         gitmodules_config = configparser.ConfigParser(allow_no_value=True)
         if gitmodules_entry:
@@ -187,7 +192,7 @@ class GitHubRepoSubmoduleManager:
         # Check if .gitmodules entry exists and update it, otherwise add it
         gitmodules_updated = False
         for entry in new_tree_entries:
-            if entry['path'] == '.gitmodules':
+            if entry['path'] == GITMODULES_FILENAME:
                 entry['sha'] = git_modules_blob_sha
                 gitmodules_updated = True
                 break
@@ -219,7 +224,7 @@ class GitHubRepoSubmoduleManager:
 
         # Get parent root tree list and try to find .gitmodules
         parent_tree_list = self.make_request('GET', f'https://{self.hostname}/repos/{self.owner}/{self.repo_top}/git/trees/{parent_tree_sha}')['tree']
-        gitmodules_entry = next((entry for entry in parent_tree_list if entry['path'] == '.gitmodules'), None)
+        gitmodules_entry = next((entry for entry in parent_tree_list if entry['path'] == GITMODULES_FILENAME), None)
         path_to_submodule_splitted = path_to_submodule.split('/')
 
         tree_list = parent_tree_list
@@ -424,6 +429,7 @@ class App:
         print_message(MessageType.INFO, f'Using organization: {self.default_org}, repository: {self.default_repo}')
         if credentials_saved:
             print_message(MessageType.INFO, "Credentials for 'BranchBrowser' have been saved successfully.")
+        self.github = github
 
     def filter_branches_by_string(self, structure, search_string):
         filtered_structure = {}
@@ -778,6 +784,32 @@ class App:
         thread.start()
 
     def get_full_branch_name(self, item):
+        """
+        Constructs the full branch name from the tree hierarchy by traversing upwards until the root.
+
+        Args:
+            item: The starting tree item to build the branch name from.
+
+        Returns:
+            str: The full branch name as a path separated by '/'.
+
+        Raises:
+            ValueError: If the 'item' parameter is not a valid string or is empty/null.
+        """
+
+        if not isinstance(item, str):
+            print_message(
+                MessageType.ERROR,
+                "Invalid parameter: 'item' must be a string."
+            )
+            raise ValueError("Invalid parameter: 'item' must be a string.")
+        if not item:
+            print_message(
+                MessageType.ERROR,
+                "Invalid parameter: 'item' cannot be empty or null."
+            )
+            raise ValueError("Invalid parameter: 'item' cannot be empty or null.")
+
         path_parts = []
         while item:  # Traverse upwards until we reach the root
             node_text = self.branches_tree.item(item, "text")  # Get the text (branch name)
@@ -791,13 +823,16 @@ class App:
 
         item = self.branches_tree.identify('item', event.x, event.y)
 
-        branch_name = self.get_full_branch_name(item)
+        
         repo_path = self.repo_combo.get()
         
-        if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children) 
+        if len(self.branches_tree.get_children(item)) == 0:  # Check if the item is a leaf node (no children)
+            branch_name = self.get_full_branch_name(item) 
             self.menu.add_command(label="Create Branch", command=self.create_branch)
             self.menu.add_command(label="Delete Branch", command=self.delete_branch)
-            self.menu.add_command(label="Delete Branch with Submodules", command=lambda: self.delete_branch_with_submodules(branch_name))
+            self.menu.add_command(
+                label="Delete Branch with Submodules",
+                command=lambda: self.__validate_and_delete_branch(branch_name))
             self.menu.add_command(label="Manage Submodules", command=self.manage_submodules)
             org_name = self.org_combo.get()
             repo_name = self.repo_combo.get()
@@ -844,38 +879,69 @@ class App:
         else:
             message = f"Deleting branch {branch_name} on {org_name}/{repo_name} canceled!"
             print_message(MessageType.WARNING, message)
-            
 
-
-    def delete_branch_with_submodules(self, branch_name):
+    def __validate_and_delete_branch(self, branch_name):
         """
-        Deletes a specified branch in the main repository and its associated submodules.
+        Validates the branch name before invoking delete_branch_with_submodules method.
+
+        Args:
+            branch_name (str): The name of the branch to validate and delete.
+        """
+        if not branch_name or branch_name.strip() == "":
+            print_message(
+                MessageType.ERROR,
+                "Branch name cannot be empty! Please select a valid branch."
+            )
+            messagebox.showerror("Error", "Branch name cannot be empty! Please select a valid branch.")
+            return
+        
+        self.__delete_branch_with_submodules(branch_name)
+
+    def __delete_branch_with_submodules(self, branch_name):
+        """
+        Deletes a specified branch in the main repository and its associated submodules 
+        via the GitHub API, and refreshes the TreeView UI component after successful deletion.
 
         Args:
             branch_name (str): The name of the branch to delete.
 
-        Steps:
-            1. Fetches the .gitmodules file from the specified remote branch.
-            2. Parses the .gitmodules file to retrieve submodule information.
-            3. Deletes the specified branch in the main repository and submodules via GitHub API.
-            4. Refreshes the TreeView UI component after successful deletion.
+        Workflow:
+            1. Retrieves the organization and repository details from user inputs (ComboBoxes).
+            2. Fetches the .gitmodules file from the specified remote branch.
+                - The .gitmodules file contains information about submodules in the repository.
+                - If no .gitmodules file is found, an error message is displayed, and the process halts.
+            3. Parses the .gitmodules file to extract submodule details such as paths and URLs.
+            4. Displays a confirmation dialog (DeleteWithSubmodulesDialog) to proceed with the deletion.
+                - The dialog lists submodules and requires user confirmation before deletion.
+            5. If deletion is confirmed, the dialog triggers the actual deletion of the branch and its submodules.
+            6. After deletion, the TreeView UI component (branches_tree) is refreshed via the refresh method.
 
         Raises:
-            Displays error messages via messagebox in case of any issues during the process.
+            Exception: If any errors occur during the process, they are caught and displayed in an error dialog box.
+
+        Dependencies:
+            - Requires a GitHub client instance (self.github) to interact with the GitHub API.
+            - Relies on the DeleteWithSubmodulesDialog for user confirmation and deletion logic.
+            - The refresh method is called after successful deletion to update the TreeView UI.
         """
         try:
             # Fetch organization and repository details from ComboBoxes
             org_name = self.org_combo.get()
             repo_name = self.repo_combo.get()
 
-             # Fetch the .gitmodules file content from the remote branch
+            # Fetch the .gitmodules file content from the remote branch
             try:
-                file_content = self.github.get_organization(org_name).get_repo(repo_name).get_contents('.gitmodules', ref=branch_name)
+                org = self.github.get_organization(org_name)
+                repo = org.get_repo(repo_name)
+                file_content = repo.get_contents(
+                    GITMODULES_FILENAME, ref=branch_name
+                )
                 decoded_content = base64.b64decode(file_content.content).decode('utf-8')
-                print(f".gitmodules content successfully fetched:\n {decoded_content}")
-            except subprocess.CalledProcessError as e:
-                print(f"Error fetching .gitmodules: {e}")
-                messagebox.showinfo("Info", "No .gitmodules file found on the remote branch.")
+                print_message(MessageType.INFO, ".gitmodules content successfully fetched!")
+            except (subprocess.CalledProcessError) as e:
+                error_message = exceptions_handler.handle(e, f"Error fetching .gitmodules from org: {org_name}, repo: {repo_name}, branch: {branch_name}")
+                print_message(MessageType.ERROR, error_message)
+                messagebox.showerror("Error", f"{error_message}")
                 return
 
             # Parse .gitmodules to retrieve submodule details
@@ -894,19 +960,17 @@ class App:
                     submodules.append(current_submodule)
 
             # Open confirmation dialog for branch deletion
-            result = DeleteWithSubmodulesDialog(self.root, self.github_client, org_name, repo_name, branch_name, submodules)
-
-            if result.success:
-                # Refresh UI after successful operation
-                self.refresh()
-                messagebox.showinfo("Success", "Branches deleted successfully.")
-            else:
-                messagebox.showerror("Error", "Branch deletion failed. Please try again.")
-
+            DeleteWithSubmodulesDialog(
+                self.root, self.github_client, org_name, repo_name, branch_name, submodules, self.refresh
+            )
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {str(e)}.")
+            print_message(
+                MessageType.ERROR,
+                f"An error occurred while deleting branch and submodules: {str(e)}.")
+            messagebox.showerror(
+                "Error",
+                f"An error occurred while deleting branch and submodules: {str(e)}.")
 
- 
     def update_github_token(self):
         token_dialog = TokenDialog(self.root)
         updated_token = token_dialog.result

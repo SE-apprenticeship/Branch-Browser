@@ -1,59 +1,35 @@
 import tkinter as tk
-import logging
-from tkinter import simpledialog
-
-
-# Set up logging configuration
-logging.basicConfig(
-    # The log file where the messages will be stored
-    filename='branch_deletion_with_submodules.log',
-    # Log messages of this level or higher (INFO, WARNING, ERROR, etc.)
-    level=logging.INFO,
-    # Format of the log messages
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filemode='a'  # Append to the file, don't overwrite
-)
+from tkinter import simpledialog, messagebox, ttk
+import threading
+from message_type import MessageType
 
 
 class DeleteWithSubmodulesDialog(simpledialog.Dialog):
     """
-    A dialog to confirm the deletion of a branch in a repository and its associated submodules.
-
-    This class creates a dialog that provides the user with information about the branches
-    to be deleted, including the main repository and its submodules. The user is asked for
-    confirmation before proceeding with the deletion. The class also handles the deletion of
-    branches in both the main repository and the submodules, logging the results of each operation.
+    A dialog to confirm and execute the deletion of a branch and its associated submodule branches.
 
     Attributes:
-        github_client (GitHubClient): The GitHub client instance to interact with GitHub's API.
+        github_client (GitHubClient): The GitHub client instance for API interaction.
         org_name (str): The name of the GitHub organization.
-        repo_name (str): The name of the repository from which the branch will be deleted.
-        branch_name (str): The name of the branch to delete in the main repository.
-        submodules (list): A list of dictionaries representing submodules, each containing 'path' and 'branch' details.
-        success (bool): Indicates whether the branch deletion process was successful.
-
-    Methods:
-        body(master): Creates the body of the dialog, displaying details about the branch and submodules to be deleted.
-        apply(event=None): Handles the deletion process by calling helper methods to delete branches in the main repository and submodules.
-        _delete_branch_in_main_repo(): Deletes the specified branch in the main repository.
-        _delete_branches_in_submodules(): Deletes the specified branches in all submodules.
+        repo_name (str): The name of the repository.
+        branch_name (str): The branch to be deleted in the main repository.
+        submodules (list): List of dictionaries, each containing submodule 'path' and 'branch'.
+        refresh_callback (callable): Callback function to refresh the UI post-deletion.
     """
 
-    def __init__(self, parent, github_client, org_name, repo_name, branch_name,
-                 submodules):
+    def __init__(self, parent, github_client, org_name, repo_name, branch_name, submodules, refresh_callback):
         """
-        Initializes the dialog for confirming the deletion of a branch.
+        Initialize the dialog for branch deletion.
 
         Args:
             parent (tk.Tk): The parent window.
-            github_client (GitHubClient): The GitHub client instance.
-            org_name (str): The name of the organization.
-            repo_name (str): The name of the repository.
-            branch_name (str): The name of the branch to delete.
-            submodules (list): List of submodules, each containing 'path' and 'branch'.
+            github_client (GitHubClient): GitHub client for API operations.
+            org_name (str): GitHub organization name.
+            repo_name (str): GitHub repository name.
+            branch_name (str): The branch to delete in the main repository.
+            submodules (list): List of submodule details (dicts with 'path' and 'branch').
+            refresh_callback (callable): Function to refresh the UI after deletion.
         """
-
-        # Parameter validation
         validate_parameters(org_name, repo_name, branch_name, submodules)
 
         self.github_client = github_client
@@ -61,25 +37,23 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
         self.repo_name = repo_name
         self.branch_name = branch_name
         self.submodules = submodules
-
-        self.success = False
+        self.refresh_callback = refresh_callback
 
         super().__init__(parent, title="Delete Branch with Submodules")
 
     def body(self, master):
         """
-        Create the body of the dialog, displaying the branch deletion details.
+        Create the body of the dialog, displaying branch deletion details.
 
         Args:
-            master: The parent dialog to add the dialog components to.
+            master (tk.Widget): Parent widget to attach components to.
         """
         self.resizable(False, False)
 
-        # Prompt user about the deletion
         tk.Label(
             master,
-            text=f"Are you sure you want to delete the following branches?"
-        ).grid(row=0, column=0, padx=10, pady=10)
+            text="Are you sure you want to delete the following branches?"
+            ).grid(row=0, column=0, padx=10, pady=10)
 
         branches_to_delete = f"{self.repo_name}: {self.branch_name}\n"
         for submodule in self.submodules:
@@ -87,91 +61,163 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
             branch = submodule.get("branch")
             branches_to_delete += f"{path}: {branch}\n"
 
-        tk.Label(master, text=branches_to_delete, justify="left").grid(
-            row=1, column=0, padx=10, pady=10)
+        tk.Label(master, text=branches_to_delete, justify="left").grid(row=1, column=0, padx=10, pady=10)
+        tk.Label(master, text="This action cannot be undone.").grid(row=2, column=0, padx=10, pady=10)
 
-        # Add a warning about the action being irreversible
-        tk.Label(master, text="This action cannot be undone.").grid(
-            row=2, column=0, padx=10, pady=10)
+    def buttonbox(self):
+        """Create and layout the dialog's buttons."""
+        box = ttk.Frame(self)
+
+        ttk.Button(box, text="Yes", width=10, command=self.apply).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(box, text="No", width=10, command=self.cancel).pack(side=tk.LEFT, padx=5, pady=5)
+
+        box.pack()
 
     def apply(self, event=None):
         """
-        Apply the deletion of the branch in each repository and submodule.
+        Start the branch deletion process.
 
-        This method calls the helper methods to delete branches in the main
-        repository and its submodules. If all operations are successful,
-        the `success` attribute is set to True. Otherwise, an error is logged.
+        Initiates a thread to handle deletion to keep the UI responsive.
+        """
+        self.processing_popup = tk.Toplevel(self.master)
+        self.processing_popup.geometry("300x50")
+        tk.Label(self.processing_popup, text="Deleting branches...").pack()
+        self.processing_popup.protocol("WM_DELETE_WINDOW", lambda: None)  # Disable close button
+        self.processing_popup.grab_set()
+
+        self.destroy()
+
+        threading.Thread(target=self.process).start()
+
+    def process(self):
+        """
+        Execute the branch deletion process for the main repository and submodules.
         """
         try:
-            # Delete branch in the main repository
-            self._delete_branch_in_main_repo()
+            self.__delete_branch_in_main_repo()
+            self.__delete_branches_in_submodules()
 
-            # Delete branches in submodules
-            self._delete_branches_in_submodules()
-
-            # If all operations were successful, set success to True
-            self.success = True
-
+            messagebox.showinfo("Success", "Branch and submodules deleted successfully!")
+            self.refresh_callback()
         except Exception as e:
-            # Log the error and set success to False
-            logging.error(f"An error occurred: {str(e)}")
-            print(f"Error: {str(e)}")
-            self.success = False
+            print_message(
+                MessageType.ERROR, 
+                f"An error occured during deleting branch with submodules: {str(e)}")
+            messagebox.showerror(
+                "Error", 
+                f"An error occured during deleting branch with submodules: {str(e)}")
+        finally:
+            self.processing_popup.destroy()
 
-    def _delete_branch_in_main_repo(self):
+    def cancel(self, event=None):
+        """Handle cancellation of the dialog."""
+        self.destroy()
+        print_message(MessageType.WARNING, "Branch deletion with submodules was cancelled.")
+        messagebox.showwarning("Cancelled", "Branch deletion with submodules was cancelled.")
+        super().cancel(event)
+
+    def __delete_branch(self, repo_name, branch_name):
         """
-        Delete the specified branch in the main repository.
+        Delete a branch in a specified repository.
 
-        Calls the GitHub client's method to delete the branch in the main repository.
-        Logs the success or failure of the operation.
+        Args:
+            repo_name (str): The name of the repository where the branch should be deleted.
+            branch_name (str): The name of the branch to delete.
+
+        Raises:
+            Exception: If the deletion fails.
         """
         try:
-            self.github_client.organization_repo_delete_branch(
-                self.org_name, self.repo_name, self.branch_name
-            )
-            print(f"Successfully deleted branch '{self.branch_name}' in repository '{self.repo_name}'.")
-            logging.info(f"Successfully deleted branch '{self.branch_name}' in repository '{self.repo_name}'.")
+            self.github_client.organization_repo_delete_branch(self.org_name, repo_name, branch_name)
+            print_message(MessageType.INFO, f"Deleted branch '{branch_name}' in '{repo_name}'.")
         except Exception as e:
-            logging.error(f"Failed to delete branch '{self.branch_name}' in repository '{self.repo_name}': {str(e)}")
-            print(f"Failed to delete branch '{self.branch_name}' in repository '{self.repo_name}': {str(e)}")
-            raise e
+            print_message(
+                MessageType.ERROR,
+                f"Failed to delete branch '{branch_name}' in '{repo_name}': {str(e)}")
+            raise
 
-    def _delete_branches_in_submodules(self):
+    def __delete_branch_in_main_repo(self):
         """
-        Delete the branches in all specified submodules.
+        Delete the branch in the main repository by using the __delete_branch method.
+        
+        Raises:
+            Exception: If the deletion fails.
+        """
+        self.__delete_branch(self.repo_name, self.branch_name)
+        
 
-        Iterates through the list of submodules and calls the GitHub client's method
-        to delete each branch in the respective submodule repository. Logs the success
-        or failure of each operation.
+    def __delete_branches_in_submodules(self):
+        """
+        Delete branches in all specified submodules by using the __delete_branch method.
+        
+        Raises:
+            Exception: If any submodule branch deletion fails.
         """
         for submodule in self.submodules:
             submodule_path = submodule.get("path")
             submodule_branch = submodule.get("branch")
+            self.__delete_branch(submodule_path, submodule_branch)
 
-            try:
-                self.github_client.organization_repo_delete_branch(
-                    self.org_name, submodule_path, submodule_branch
-                )
-                print(f"Branch '{submodule_branch}' deleted successfully in submodule '{submodule_path}'.")
-                logging.info(f"Branch '{submodule_branch}' deleted successfully in submodule '{submodule_path}'.")
-            except Exception as e:
-                logging.error(f"Failed to delete branch '{submodule_branch}' in submodule '{submodule_path}': {str(e)}")
-                print(f"Failed to delete branch '{submodule_branch}' in submodule '{submodule_path}': {str(e)}")
-                raise e
-            
+
 def validate_parameters(org_name, repo_name, branch_name, submodules):
-    try:
-        if not isinstance(org_name, str) or not org_name:
-            raise ValueError("The org_name parameter must be a non-empty string.")
-        if not isinstance(repo_name, str) or not repo_name:
-            raise ValueError("The repo_name parameter must be a non-empty string.")
-        if not isinstance(branch_name, str) or not branch_name:
-            raise ValueError("The branch_name parameter must be a non-empty string.")
-        if not isinstance(submodules, list):
-            raise ValueError("Submodules must be a list.")
-        for submodule in submodules:
-            if not isinstance(submodule, dict) or "path" not in submodule or "branch" not in submodule:
-                raise ValueError(f"Each submodule must be a dictionary with 'path' and 'branch': {submodule}")
-    except ValueError as e:
-        logging.error(f"Parameter validation failed: {e}")
-        raise
+    """
+    Validate input parameters for the dialog.
+
+    Args:
+        org_name (str): Organization name.
+        repo_name (str): Repository name.
+        branch_name (str): Branch name.
+        submodules (list): List of submodule dictionaries.
+
+    Raises:
+        ValueError: If any parameter is invalid.
+    """
+    if not isinstance(org_name, str) or not org_name:
+        error_message = "org_name must be a non-empty string."
+        print_message(MessageType.ERROR, f"Validation Error: {error_message}")
+        raise ValueError(error_message)
+    
+    if not isinstance(repo_name, str) or not repo_name:
+        error_message = "repo_name must be a non-empty string."
+        print_message(MessageType.ERROR, f"Validation Error: {error_message}")
+        raise ValueError(error_message)
+    
+    if not isinstance(branch_name, str) or not branch_name:
+        error_message = "branch_name must be a non-empty string."
+        print_message(MessageType.ERROR, f"Validation Error: {error_message}")
+        raise ValueError(error_message)
+    
+    if not isinstance(submodules, list):
+        error_message = "submodules must be a list."
+        print_message(MessageType.ERROR, f"Validation Error: {error_message}")
+        raise ValueError(error_message)
+
+    for submodule in submodules:
+        if not isinstance(submodule, dict) or "path" not in submodule or "branch" not in submodule:
+            error_message = f"Each submodule must be a dictionary with 'path' and 'branch': {submodule}"
+            print_message(MessageType.ERROR, f"Validation Error: {error_message}")
+            raise ValueError(error_message)
+        
+        path = submodule.get("path")
+        branch = submodule.get("branch")
+
+        if not isinstance(path, str) or not path.strip():
+            error_message = f"'path' must be a non-empty string: {path}"
+            print_message(MessageType.ERROR, f"Validation Error: {error_message}")
+            raise ValueError(error_message)
+        
+        if not isinstance(branch, str) or not branch.strip():
+            error_message = f"'branch' must be a non-empty string: {branch}"
+            print_message(MessageType.ERROR, f"Validation Error: {error_message}")
+            raise ValueError(error_message)
+
+
+def print_message(msg_type, message):
+    """
+    Print a message with its type.
+
+    Args:
+        msg_type (MessageType): The type of the message.
+        message (str): The message content.
+    """
+    print(f"{msg_type.value} {message}")
