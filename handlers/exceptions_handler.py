@@ -18,6 +18,8 @@ class ExceptionsHandler:
             return (MessageType.ERROR, f"NoneType error occured.")
         elif isinstance(e, ValueError):
             return (MessageType.ERROR, f"Value error occured.")
+        elif isinstance(e, TypeError):
+            return (MessageType.ERROR, f"Type error occured.")
         else:
             error_message = (MessageType.ERROR, f"ERROR - Unknown error occured: {e}")
         return error_message

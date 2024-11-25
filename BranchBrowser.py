@@ -1612,11 +1612,16 @@ def get_sublist(item):
 class TextHandler(object):
     def __init__(self, widget):
         self.widget = widget
-    
+        
     def write(self, s):
         # Enable the Text widget for editing
         self.widget.config(state='normal')
-
+        if not isinstance(s, str):
+            try:
+                s = str(s)
+            except Exception as e:
+                handle_and_print_exception(e, 'Text message must be a string.')
+                
         # Define tags
         bold_font = font.Font(self.widget, self.widget.cget("font"))
         bold_font.configure(weight="bold")
