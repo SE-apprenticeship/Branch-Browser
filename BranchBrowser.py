@@ -1004,6 +1004,7 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         self.team_names = team_names
         self.branch_name = branch_name
         self.update_tree = update_tree
+        self.is_filter_disabled = True
 
         # Call the superclass's __init__ method
         super().__init__(parent)
@@ -1036,6 +1037,38 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         feature_versions = list({branch.split("/")[-2] for branch in filtered_branches})
         sorted_feature_versions = sorted(feature_versions, key=lambda v: float(v))
         return sorted_feature_versions
+
+
+    def on_toggle_filter(self):
+        branch_type = self.branch_type_combobox.get()
+        self.is_filter_disabled = not self.is_filter_disabled
+
+        if self.is_filter_disabled:
+            self.button_toggle_filter.config(text="Expand filter")
+        else:
+            self.button_toggle_filter.config(text="Collapse filter")
+
+        if self.is_filter_disabled:
+            self.branch_type_label.grid_forget()
+            self.branch_type_combobox.grid_forget()
+            self.team_version_label.grid_forget()
+            self.team_version_combobox.grid_forget()
+            self.feature_version_label.grid_forget()
+            self.feature_version_combobox.grid_forget()
+        elif branch_type == "Features":
+            self.branch_type_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
+            self.branch_type_combobox.grid(row=2, column=1, pady=(0, 5))
+            self.team_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+            self.team_version_combobox.grid(row=3, column=1, pady=(0, 5))
+            self.feature_version_label.grid(row=4, column=0, sticky="w", pady=(0, 5))
+            self.feature_version_combobox.grid(row=4, column=1, pady=(0, 5))
+        else:
+            self.branch_type_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
+            self.branch_type_combobox.grid(row=2, column=1, pady=(0, 5))
+            self.team_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+            self.team_version_combobox.grid(row=3, column=1, pady=(0, 5))
+        self.update_repo_branches_right_listbox()
+
 
     def update_repo_branches_right_listbox(self, event = None):
         # Get the selected values of the repo name and branch type comboboxes
@@ -1070,8 +1103,8 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
             self.team_version_combobox.current(0)
 
             # Adding the feature version label and combobox back to the UI
-            self.feature_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
-            self.feature_version_combobox.grid(row=3, column=1, pady=(0, 5))
+            self.feature_version_label.grid(row=4, column=0, sticky="w", pady=(0, 5))
+            self.feature_version_combobox.grid(row=4, column=1, pady=(0, 5))
 
         self.repo_branch_right_lb_info_map.clear()
 
@@ -1098,6 +1131,8 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
             feature_version = self.feature_version_combobox.get()
             filtered_branches = [branch for branch in filtered_branches if feature_version in branch]
 
+        if self.is_filter_disabled:
+            filtered_branches = self.branches
         # Update the repo branches right listbox based on the selected values of the comboboxes
         for index, branch in enumerate(filtered_branches):
             repo_branch_lb_info = RepoBranchListBoxInfo(repo_name, branch, listbox_position=index)
@@ -1153,6 +1188,10 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         org_repos_names = self.github_client.get_organization_repos_names(self.org_name)
         org_repos_names.remove(self.repo_name)
         org_repos_names.sort()
+
+        # Adding a button for toggling filters
+        self.button_toggle_filter = tk.Button(self.right_frame, text="Expand filter", 
+                                              command=self.on_toggle_filter)
 
         # Create combobox and label for repos names
         self.repo_label = tk.Label(self.right_frame, text="Repository:")
@@ -1212,15 +1251,10 @@ class SubmoduleSelectorDialog(simpledialog.Dialog):
         button_right.grid(row=0, column=2)
 
         self.right_frame.grid(row=0, column=3)
-        self.repo_label.grid(row=0, column=0, sticky="w", pady=(0, 5))
-        self.repos_combobox.grid(row=0, column=1, pady=(0, 5))
-        self.branch_type_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
-        self.branch_type_combobox.grid(row=1, column=1, pady=(0, 5))
-        self.team_version_label.grid(row=2, column=0, sticky="w", pady=(0, 5))
-        self.team_version_combobox.grid(row=2, column=1, pady=(0, 5))
-        self.feature_version_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
-        self.feature_version_combobox.grid(row=3, column=1, pady=(0, 5))
-        self.repo_branches_right_listbox.grid(row=4, column=0, columnspan=2)
+        self.button_toggle_filter.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
+        self.repo_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
+        self.repos_combobox.grid(row=1, column=1, pady=(0, 5))
+        self.repo_branches_right_listbox.grid(row=5, column=0, columnspan=2)
 
         # Initialize current state of submodules for current org/repo/branch
         self.init_submodules_left_listbox()
