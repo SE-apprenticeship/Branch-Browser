@@ -25,6 +25,8 @@ from delete_with_submodules_dialog import DeleteWithSubmodulesDialog
 token = ''
 GIT_HOSTNAME = 'github.com'
 GITMODULES_FILENAME = '.gitmodules'
+
+
 exceptions_handler = ExceptionsHandler()
 class GitHubClient:
     def __init__(self, hostname, token):
@@ -796,19 +798,20 @@ class App:
         Raises:
             ValueError: If the 'item' parameter is not a valid string or is empty/null.
         """
-
+        item_must_be_a_string_msg = "Invalid parameter: 'item' must be a string."
+        item_cannot_be_empty_or_null_msg = "Invalid parameter: 'item' cannot be empty or null."
         if not isinstance(item, str):
             print_message(
                 MessageType.ERROR,
-                "Invalid parameter: 'item' must be a string."
+                item_must_be_a_string_msg
             )
-            raise ValueError("Invalid parameter: 'item' must be a string.")
+            raise ValueError(item_must_be_a_string_msg)
         if not item:
             print_message(
                 MessageType.ERROR,
-                "Invalid parameter: 'item' cannot be empty or null."
+                item_cannot_be_empty_or_null_msg
             )
-            raise ValueError("Invalid parameter: 'item' cannot be empty or null.")
+            raise ValueError(item_cannot_be_empty_or_null_msg)
 
         path_parts = []
         while item:  # Traverse upwards until we reach the root
@@ -887,12 +890,13 @@ class App:
         Args:
             branch_name (str): The name of the branch to validate and delete.
         """
+        empty_branch_name_message = "Branch name cannot be empty! Please select a valid branch."
         if not branch_name or branch_name.strip() == "":
             print_message(
                 MessageType.ERROR,
-                "Branch name cannot be empty! Please select a valid branch."
+                empty_branch_name_message
             )
-            messagebox.showerror("Error", "Branch name cannot be empty! Please select a valid branch.")
+            messagebox.showerror("Error", empty_branch_name_message)
             return
         
         self.__delete_branch_with_submodules(branch_name)
@@ -937,9 +941,9 @@ class App:
                     GITMODULES_FILENAME, ref=branch_name
                 )
                 decoded_content = base64.b64decode(file_content.content).decode('utf-8')
-                print_message(MessageType.INFO, ".gitmodules content successfully fetched!")
+                print_message(MessageType.INFO, f"{GITMODULES_FILENAME} content successfully fetched!")
             except (subprocess.CalledProcessError) as e:
-                error_message = exceptions_handler.handle(e, f"Error fetching .gitmodules from org: {org_name}, repo: {repo_name}, branch: {branch_name}")
+                error_message = exceptions_handler.handle(e, f"Error fetching {GITMODULES_FILENAME} from org: {org_name}, repo: {repo_name}, branch: {branch_name}")
                 print_message(MessageType.ERROR, error_message)
                 messagebox.showerror("Error", f"{error_message}")
                 return

@@ -1,6 +1,8 @@
-import tkinter as tk
-from tkinter import simpledialog, messagebox, ttk
 import threading
+import tkinter as tk
+from tkinter import simpledialog, messagebox
+from tkinter import ttk
+
 from message_type import MessageType
 
 
@@ -100,20 +102,22 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
             messagebox.showinfo("Success", "Branch and submodules deleted successfully!")
             self.refresh_callback()
         except Exception as e:
+            error_message = f"An error occured during deleting branch with submodules: {str(e)}"
             print_message(
                 MessageType.ERROR, 
-                f"An error occured during deleting branch with submodules: {str(e)}")
+                error_message)
             messagebox.showerror(
                 "Error", 
-                f"An error occured during deleting branch with submodules: {str(e)}")
+                error_message)
         finally:
             self.processing_popup.destroy()
 
     def cancel(self, event=None):
         """Handle cancellation of the dialog."""
+        cancellation_message = "Branch deletion with submodules was cancelled."
         self.destroy()
-        print_message(MessageType.WARNING, "Branch deletion with submodules was cancelled.")
-        messagebox.showwarning("Cancelled", "Branch deletion with submodules was cancelled.")
+        print_message(MessageType.WARNING, cancellation_message)
+        messagebox.showwarning("Cancelled", cancellation_message)
         super().cancel(event)
 
     def __delete_branch(self, repo_name, branch_name):
@@ -145,7 +149,6 @@ class DeleteWithSubmodulesDialog(simpledialog.Dialog):
         """
         self.__delete_branch(self.repo_name, self.branch_name)
         
-
     def __delete_branches_in_submodules(self):
         """
         Delete branches in all specified submodules by using the __delete_branch method.
