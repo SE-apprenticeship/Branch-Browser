@@ -1621,7 +1621,8 @@ class TextHandler(object):
                 s = str(s)
             except Exception as e:
                 handle_and_print_exception(e, 'Text message must be a string.')
-                
+        if s.strip() == "":
+            return
         # Define tags
         bold_font = font.Font(self.widget, self.widget.cget("font"))
         bold_font.configure(weight="bold")
