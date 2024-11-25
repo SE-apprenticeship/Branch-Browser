@@ -649,16 +649,22 @@ class App:
         def load_repos_and_teams(org_name, repo_combobox, team_combobox):
             repositories = self.github_client.get_organization_repos_names(org_name)
             if not repositories:
-                messagebox.showwarning("No Repositories", "No repositories found for the selected organization.")
-                return
+                repo_combobox['values'] = []
+                repo_combobox.set("")  
+                return 
+            
             repo_combobox['values'] = repositories
-            repo_combobox.set(self.default_repo) 
+            if self.default_repo and self.default_repo in repositories:
+                repo_combobox.set(self.default_repo)
+            else:
+                repo_combobox.set(repositories[0])  
             
             teams = self.github_client.get_organization_teams(org_name)
             if not teams:
-                messagebox.showwarning("No Teams", "No teams found for the selected organization.")
-                self.menu_bar.entryconfig("Edit config", state="normal")
-                return
+                team_combobox['values'] = []
+                team_combobox.set("") 
+                return 
+            
             team_combobox['values'] = teams
             if self.default_team and self.default_team in teams:
                 team_combobox.set(self.default_team)
@@ -680,7 +686,7 @@ class App:
             new_team = team_combobox.get()
             new_git_hostname = git_hostname_entry.get()
 
-            if all([new_org, new_repo, new_git_hostname, new_team]):
+            if all([new_org, new_repo, new_git_hostname]):
                 config = {
                     'default_organization': new_org,
                     'default_repository': new_repo,
@@ -697,6 +703,7 @@ class App:
                 self.menu_bar.entryconfig("Edit config", state="normal")
             else:
                 messagebox.showwarning("Input Error", "All fields must be provided.")
+                self.menu_bar.entryconfig("Edit config", state="normal")
 
         save_button = tk.Button(config_dialog, text="Save", command=on_save)
         save_button.pack(side='left', pady=10, padx=50)
@@ -1799,8 +1806,13 @@ def main():
     try:
         config = App.load_config()
         if config is None:
-            print("Configuration loading failed. Exiting...")
-            return
+            print_message(MessageType.WARNING, "Configuration loading failed. Using default values.")
+            config = {
+                "default_team": "default_team",
+                "GIT_HOSTNAME": "github.com",
+                "default_organization": "default_org",
+                "default_repository": "default_repo"
+            }
         
         default_team = config.get("default_team") if config else "default_team"
         git_hostname = config.get("GIT_HOSTNAME", "github.com") if config else GIT_HOSTNAME
@@ -1821,8 +1833,12 @@ def main():
 
         # Get list of available teams for the selected organization (optional, if required)
         available_teams = github_client.get_organization_teams(app_org) 
-        app_team = select_default_or_first(default_team, available_teams, "team")
-
+        if available_teams:
+            app_team = select_default_or_first(default_team, available_teams, "team")
+        else:
+            app_team = " "
+            print_message(MessageType.WARNING, f"No teams available for organization '{app_org}'. Setting team to None.")
+            
         app = App(root, github_client, app_org, app_repo, token_entered_via_token_dialog, config_path, app_team)  #, app_team
 
         # Populate combo boxes with available organizations and repositories
