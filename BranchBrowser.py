@@ -28,6 +28,8 @@ GITMODULES_FILENAME = '.gitmodules'
 
 
 exceptions_handler = ExceptionsHandler()
+
+
 class GitHubClient:
     def __init__(self, hostname, token):
         self.github = Github(base_url=f"https://api.{hostname}", login_or_token=token)
