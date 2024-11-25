@@ -12,7 +12,7 @@ from tkinter import BOTTOM, RIGHT, X, Y, Scrollbar, font
 from tkinter import messagebox
 import tkinter.ttk as ttk
 from tkinter import simpledialog
-from github import Github, RateLimitExceededException, UnknownObjectException
+from github import Github, GithubException
 import configparser
 import requests
 import win32cred
@@ -63,8 +63,10 @@ class GitHubClient:
             repo = org.get_repo(repo_name)
             file_content = repo.get_contents('.gitmodules', ref=branch_name)
         except Exception as e:
-            err_desc = f"No .gitmodules file found. The repository '{repo_name} {branch_name}' does not contain any submodules or the submodule configuration is missing/corrupted."
-            handle_and_print_exception(e, err_desc)
+            if isinstance(e, GithubException) and e.status == 404:
+                return None
+            else:
+                handle_and_print_exception(e)
         return file_content.decoded_content.decode('utf-8') if file_content else None
 
     def get_organization_repo_branch_commit_sha(self, org_name, repo_name, branch_name):
