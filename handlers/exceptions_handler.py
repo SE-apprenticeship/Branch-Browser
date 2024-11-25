@@ -1,3 +1,4 @@
+import subprocess
 from json import JSONDecodeError
 from github import BadAttributeException, GithubException
 from requests import RequestException
@@ -20,6 +21,8 @@ class ExceptionsHandler:
             return (MessageType.ERROR, f"Value error occured.")
         elif isinstance(e, TypeError):
             return (MessageType.ERROR, f"Type error occured.")
+        elif isinstance(e, subprocess.CalledProcessError):
+            return (MessageType.ERROR, f"Called process error occured.")
         else:
             error_message = (MessageType.ERROR, f"ERROR - Unknown error occured: {e}")
         return error_message
