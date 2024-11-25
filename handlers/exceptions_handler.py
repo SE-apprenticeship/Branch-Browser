@@ -19,6 +19,8 @@ class ExceptionsHandler:
             return (MessageType.ERROR, f"NoneType error occured.")
         elif isinstance(e, ValueError):
             return (MessageType.ERROR, f"Value error occured.")
+        elif isinstance(e, TypeError):
+            return (MessageType.ERROR, f"Type error occured.")
         elif isinstance(e, subprocess.CalledProcessError):
             return (MessageType.ERROR, f"Called process error occured.")
         else:
