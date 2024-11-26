@@ -1867,8 +1867,7 @@ class TextHandler(object):
                 s = str(s)
             except Exception as e:
                 handle_and_print_exception(e, 'Text message must be a string.')
-        if s.strip() == "":
-            return
+
         # Define tags
         bold_font = font.Font(self.widget, self.widget.cget("font"))
         bold_font.configure(weight="bold")
@@ -1897,7 +1896,10 @@ class TextHandler(object):
 
                 # Update the start index to after the </b> tag
                 start = close_tag + 4
-
+                
+        # Don't print if there are only blank spaces
+        if s.strip(" /t/r") == "":
+            return
         # Add timestamp and apply color to the entire message
         if s != '\n':
             # Get current date and time
